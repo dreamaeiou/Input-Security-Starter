@@ -75,6 +75,7 @@ public class InputSecurityFilter implements Filter {
         SecurityEvent event = new SecurityEvent(ruleName, input, url, method);
         eventRecorder.record(event);
 
+        // 拦截模式下返回错误
         if (properties.getMode() == InputSecurityProperties.Mode.BLOCK) {
             response.setStatus(HttpStatus.FORBIDDEN.value());
             response.setContentType("application/json");
