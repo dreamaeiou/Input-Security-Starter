@@ -2,7 +2,6 @@ package org.example.input_security_starter.engine;
 
 
 import org.example.input_security_starter.model.SecurityRule;
-//import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -62,13 +61,5 @@ public class RuleEngine {
         return null;
     }
 
-    // 添加一个方法来获取当前加载的规则数量，用于调试
-    public int getLoadedRulesCount() {
-        return compiledPatterns.size();
-    }
-
-    public List<String> getRuleNames() {
-        return new ArrayList<>(ruleNames);
-    }
 
 }

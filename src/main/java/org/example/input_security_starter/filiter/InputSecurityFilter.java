@@ -36,6 +36,9 @@ public class InputSecurityFilter implements Filter {
         HttpServletRequest httpRequest = (HttpServletRequest) request;
         String url = httpRequest.getRequestURI();
         String method = httpRequest.getMethod();
+        
+        // 获取客户端IP地址
+        String clientIp = getClientIp(httpRequest);
 
         // 跳过内嵌 UI 路径
         if (url.startsWith("/input-security-ui")) {
@@ -48,7 +51,7 @@ public class InputSecurityFilter implements Filter {
             for (String value : httpRequest.getParameterValues(paramName)) {
                 String rule = ruleEngine.match(value);
                 if (rule != null) {
-                    handleViolation(rule, value, url, method, (HttpServletResponse) response);
+                    handleViolation(rule, value, url, method, clientIp, (HttpServletResponse) response);
                     return;
                 }
             }
@@ -61,7 +64,7 @@ public class InputSecurityFilter implements Filter {
             String value = httpRequest.getHeader(name);
             String rule = ruleEngine.match(value);
             if (rule != null) {
-                handleViolation(rule, value, url, method, (HttpServletResponse) response);
+                handleViolation(rule, value, url, method, clientIp, (HttpServletResponse) response);
                 return;
             }
         }
@@ -70,9 +73,9 @@ public class InputSecurityFilter implements Filter {
         chain.doFilter(request, response);
     }
 
-    private void handleViolation(String ruleName, String input, String url, String method, HttpServletResponse response)
+    private void handleViolation(String ruleName, String input, String url, String method, String clientIp, HttpServletResponse response)
             throws IOException {
-        SecurityEvent event = new SecurityEvent(ruleName, input, url, method);
+        SecurityEvent event = new SecurityEvent(ruleName, input, url, method, clientIp);
         eventRecorder.record(event);
 
         // 拦截模式下返回错误
@@ -80,9 +83,16 @@ public class InputSecurityFilter implements Filter {
             response.setStatus(HttpStatus.FORBIDDEN.value());
             response.setContentType("application/json");
             response.getWriter().write("{\"error\":\"Input blocked by security rule: " + ruleName + "\"}");
-            return;
         } else {
             // 监控模式下允许请求继续执行但记录违规
         }
+    }
+    
+    private String getClientIp(HttpServletRequest request) {
+        String xfHeader = request.getHeader("X-Forwarded-For");
+        if (xfHeader == null) {
+            return request.getRemoteAddr();
+        }
+        return xfHeader.split(",")[0];
     }
 }
