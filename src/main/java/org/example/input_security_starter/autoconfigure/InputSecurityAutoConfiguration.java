@@ -31,6 +31,7 @@ public class InputSecurityAutoConfiguration {
 
     // 事件记录器
     @Bean
+    @ConditionalOnMissingBean
     public EventRecorder eventRecorder() {
         return new EventRecorder();
     }
@@ -48,9 +49,6 @@ public class InputSecurityAutoConfiguration {
         return registration;
     }
 
-    // 控制器
-    @Bean
-    public InputSecurityController inputSecurityController(RuleEngine ruleEngine, EventRecorder eventRecorder) {
-        return new InputSecurityController(ruleEngine, eventRecorder);
-    }
+    // 注意：移除了inputSecurityController的@Bean定义，因为InputSecurityController类本身有@RestController注解，
+    // 会被组件扫描自动注册为Bean，避免重复定义
 }

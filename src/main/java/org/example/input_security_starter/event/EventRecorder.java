@@ -1,11 +1,10 @@
 package org.example.input_security_starter.event;
 
 import org.springframework.stereotype.Component;
-
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.time.format.DateTimeFormatter;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
@@ -48,8 +47,9 @@ public class EventRecorder {
     
     private void writeToLogFile(SecurityEvent event) {
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(LOG_FILE_PATH, true))) {
+            SimpleDateFormat isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
             String logEntry = String.format("%s | %s | %s | %s | %s%n",
-                    event.getTimestamp().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+                    isoFormat.format(event.getTimestamp()),
                     event.getIpAddress() != null ? event.getIpAddress() : "UNKNOWN",
                     event.getRuleName(),
                     event.getMethod(),

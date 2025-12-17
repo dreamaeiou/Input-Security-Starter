@@ -18,8 +18,8 @@ Input Security Starter 是一个基于 Spring Boot 的安全输入检测 starter
 
 ## 系统要求
 
-- Java 17 或更高版本
-- Spring Boot 3.3.0
+- Java 8 或更高版本
+- Spring Boot 2.7.18
 
 ## 快速开始
 
@@ -51,6 +51,13 @@ input-security.mode=block
 
 ```java
 @SpringBootApplication(scanBasePackages = {"com.yourcompany", "org.example.input_security_starter"})
+```
+
+> 注意：如果你的项目使用的是Spring Boot 2.x版本，则需要在主应用类上添加`@ComponentScan`注解：
+
+```java
+@SpringBootApplication
+@ComponentScan({"com.yourcompany", "org.example.input_security_starter"})
 ```
 
 ### 3. 访问管理界面
