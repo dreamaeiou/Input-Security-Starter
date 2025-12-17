@@ -1,6 +1,6 @@
 # Input Security Starter
 
-[English](./README_EN.md) | [中文](./README_ZH.md)
+[English](./README.md) | [中文](./README_ZH.md)
 
 ```
     ____                  __     _____                      _ __           _____ ____  __ __
