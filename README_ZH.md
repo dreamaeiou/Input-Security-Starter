@@ -1,5 +1,16 @@
 # Input Security Starter
 
+[English](./README_EN.md) | [中文](./README_ZH.md)
+
+```
+    ____                  __     _____                      _ __           _____ ____  __ __
+   /  _/___  ____  __  __/ /_   / ___/___  _______  _______(_) /___  __   / ___// __ \/ //_/
+   / // __ \/ __ \/ / / / __/   \__ \/ _ \/ ___/ / / / ___/ / __/ / / /   \__ \/ / / / ,<
+ _/ // / / / /_/ / /_/ / /_    ___/ /  __/ /__/ /_/ / /  / / /_/ /_/ /   ___/ / /_/ / /| |
+/___/_/ /_/ .___/\__,_/\__/   /____/\___/\___/\__,_/_/  /_/\__/\__, /   /____/_____/_/ |_|
+         /_/                                                  /____/
+```
+
 ## 项目简介
 
 Input Security Starter 是一个基于 Spring Boot 的安全输入检测 starter，可以帮助你的应用程序检测和阻止常见的 Web 攻击，如 XSS 和 SQL 注入等。该 starter 采用了零侵入式设计，只需简单配置即可为你的应用提供安全保护。
@@ -25,7 +36,7 @@ Input Security Starter 是一个基于 Spring Boot 的安全输入检测 starter
 
 ### 1. 添加依赖
 
-在你的 Maven 项目中添加以下依赖：
+将工程经Maven install 到你的本地仓库后，在项目中添加以下依赖：
 
 ```xml
 <dependency>
@@ -62,14 +73,14 @@ input-security.mode=block
 
 ### 3. 访问管理界面
 
-启动应用程序后，可以通过以下地址访问内嵌的管理界面：
+启动应用程序后，可以通过以下地址访问 Thymeleaf 版本的界面：
 ```
-http://localhost:your-port/input-security-ui
+http://your-ip:your-port/input-security-view/events
 ```
 
-也可以通过以下地址访问 Thymeleaf 版本的界面：
+可以在此页面进行测试：
 ```
-http://localhost:your-port/input-security-view/test
+http://your-ip:your-port/input-security-view/test
 ```
 
 在管理界面中，你可以：
