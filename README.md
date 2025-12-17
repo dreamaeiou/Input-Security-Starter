@@ -47,16 +47,22 @@ input-security.enabled=true
 input-security.mode=block
 ```
 
+在 `application` 入口类开启组件扫描
+
+```java
+@SpringBootApplication(scanBasePackages = {"com.yourcompany", "org.example.input_security_starter"})
+```
+
 ### 3. 访问管理界面
 
 启动应用程序后，可以通过以下地址访问内嵌的管理界面：
 ```
-http://localhost:9090/input-security-ui
+http://localhost:your-port/input-security-ui
 ```
 
 也可以通过以下地址访问 Thymeleaf 版本的界面：
 ```
-http://localhost:9090/input-security-view/test
+http://localhost:your-port/input-security-view/test
 ```
 
 在管理界面中，你可以：

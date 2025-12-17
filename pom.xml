@@ -28,9 +28,9 @@
         </developer>
     </developers>
     <scm>
-        <connection>scm:git:git://https://github.com/dreamaeiou/Input-Security-Starter.git</connection>
-        <developerConnection>scm:git:ssh://github.com/dreamaeiou/Input-Security-Starter.git</developerConnection>
-        <url>https://github.com/dreamaeiou/Input-Security-Starter.git</url>
+        <connection>scm:git:https://github.com/dreamaeiou/Input-Security-Starter.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com:dreamaeiou/Input-Security-Starter.git</developerConnection>
+        <url>https://github.com/dreamaeiou/Input-Security-Starter</url>
     </scm>
 
     <properties>
