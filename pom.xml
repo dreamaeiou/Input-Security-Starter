@@ -8,24 +8,31 @@
         <version>3.3.0</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
+
     <groupId>org.example</groupId>
     <artifactId>input-security-starter</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>Input Security SDK</name>
     <description>Input Security SDK</description>
-    <url/>
+
     <licenses>
-        <license/>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+        </license>
     </licenses>
     <developers>
-        <developer/>
+        <developer>
+            <name>dreamaeiou</name>
+            <email>2890808817@qq.com</email>
+        </developer>
     </developers>
     <scm>
-        <connection/>
-        <developerConnection/>
-        <tag/>
-        <url/>
+        <connection>scm:git:git://https://github.com/dreamaeiou/Input-Security-Starter.git</connection>
+        <developerConnection>scm:git:ssh://github.com/dreamaeiou/Input-Security-Starter.git</developerConnection>
+        <url>https://github.com/dreamaeiou/Input-Security-Starter.git</url>
     </scm>
+
     <properties>
         <java.version>21</java.version>
     </properties>
@@ -60,6 +67,22 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+            
+            <!-- 添加 Maven JAR 插件以生成普通 JAR 文件 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+                        </manifest>
+                    </archive>
+                </configuration>
             </plugin>
         </plugins>
     </build>
