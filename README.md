@@ -51,12 +51,12 @@ input-security.mode=block
 
 启动应用程序后，可以通过以下地址访问内嵌的管理界面：
 ```
-http://localhost:8080/input-security-ui
+http://localhost:9090/input-security-ui
 ```
 
 也可以通过以下地址访问 Thymeleaf 版本的界面：
 ```
-http://localhost:8080/input-security-view/test
+http://localhost:9090/input-security-view/test
 ```
 
 在管理界面中，你可以：
