@@ -14,6 +14,7 @@ Input Security Starter 是一个基于 Spring Boot 的安全输入检测 starter
 4. **可视化管理界面** - 提供内嵌的 Web UI 界面，用于查看规则和监控事件
 5. **安全事件日志** - 自动记录所有检测到的安全事件到文本文件
 6. **高度可配置** - 可通过配置文件启用/禁用特定规则或调整规则参数
+7. **Thymeleaf 支持** - 提供基于 Thymeleaf 的 Web 界面，便于交互式操作
 
 ## 系统要求
 
@@ -51,6 +52,11 @@ input-security.mode=block
 启动应用程序后，可以通过以下地址访问内嵌的管理界面：
 ```
 http://localhost:8080/input-security-ui
+```
+
+也可以通过以下地址访问 Thymeleaf 版本的界面：
+```
+http://localhost:8080/input-security-view/test
 ```
 
 在管理界面中，你可以：
@@ -115,6 +121,7 @@ http://localhost:8080/input-security-ui
 - Servlet Filter 技术
 - 正则表达式匹配引擎
 - RESTful API 设计
+- Thymeleaf 模板引擎
 
 ## 许可证
 

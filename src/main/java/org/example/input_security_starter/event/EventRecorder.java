@@ -26,7 +26,7 @@ public class EventRecorder {
             
             // 保持最近的事件，避免内存溢出
             if (events.size() > MAX_EVENTS) {
-                events.removeFirst();
+                events.remove(0);
             }
             
             // 记录到文本文件

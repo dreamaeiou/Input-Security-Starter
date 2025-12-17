@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>安全事件记录</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            margin-right: 10px;
+        }
+        input[type="number"] {
+            padding: 5px;
+            width: 80px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .back-link {
+            margin-bottom: 20px;
+        }
+        .back-link a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        .back-link a:hover {
+            text-decoration: underline;
+        }
+        .mode-info {
+            background-color: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="back-link">
+        <a href="/input-security-view/test">← 返回输入测试</a>
+    </div>
+    
+    <h1>安全事件记录</h1>
+    
+    <div class="mode-info">
+        当前工作模式: <span th:text="${mode}"></span>
+    </div>
+    
+    <form action="#" th:action="@{/input-security-view/events}" method="get">
+        <div class="form-group">
+            <label for="limit">显示最近记录数:</label>
+            <input type="number" id="limit" name="limit" th:value="${limit}" min="1" max="1000">
+            <button type="submit">更新</button>
+        </div>
+    </form>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>时间戳</th>
+                <th>输入内容</th>
+                <th>匹配规则</th>
+                <th>操作</th>
+                <th>IP地址</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr th:each="event : ${events}">
+                <td th:text="${event.formattedTimestamp}"></td>
+                <td th:text="${event.inputSnippet}"></td>
+                <td th:text="${event.ruleName ?: '无'}"></td>
+                <td th:text="${mode == 'block' and event.ruleName != null ? '阻止' : '允许'}"></td>
+                <td th:text="${event.ipAddress ?: '未知'}"></td>
+            </tr>
+            <tr th:if="${events.empty}">
+                <td colspan="5" style="text-align: center;">没有找到安全事件记录</td>
+            </tr>
+        </tbody>
+    </table>
+</body>
+</html>

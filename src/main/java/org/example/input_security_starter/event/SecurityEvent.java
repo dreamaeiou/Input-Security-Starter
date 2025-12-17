@@ -1,6 +1,7 @@
 package org.example.input_security_starter.event;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 public class SecurityEvent {
     private final String ruleName;
@@ -10,7 +11,6 @@ public class SecurityEvent {
     private String ipAddress;
     private final LocalDateTime timestamp;
 
-    // 构造、getter 省略（可按需补充）
     public SecurityEvent(String ruleName, String inputSnippet, String url, String method) {
         this.ruleName = ruleName;
         this.inputSnippet = inputSnippet;
@@ -24,13 +24,20 @@ public class SecurityEvent {
         this.ipAddress = ipAddress;
     }
 
-    // getters...
     public String getRuleName() { return ruleName; }
     public String getInputSnippet() { return inputSnippet; }
     public String getUrl() { return url; }
     public String getMethod() { return method; }
     public String getIpAddress() { return ipAddress; }
     public LocalDateTime getTimestamp() { return timestamp; }
+
+
+    
+    // 获取格式化的时间戳字符串
+    public String getFormattedTimestamp() {
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        return timestamp.format(formatter);
+    }
     
     // setters...
     public void setIpAddress(String ipAddress) { this.ipAddress = ipAddress; }

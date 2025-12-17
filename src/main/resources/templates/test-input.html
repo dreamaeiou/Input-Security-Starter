@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>输入安全测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        .blocked {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .allowed {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .nav-links {
+            margin-bottom: 20px;
+        }
+        .nav-links a {
+            color: #007bff;
+            text-decoration: none;
+            margin-right: 15px;
+        }
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+        .mode-info {
+            background-color: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav-links">
+        <a href="/input-security-view/events">查看安全事件记录</a>
+    </div>
+    
+    <h1>输入安全测试</h1>
+    
+    <div class="mode-info">
+        当前工作模式: <span th:text="${mode}"></span>
+    </div>
+    
+    <form action="#" th:action="@{/input-security-view/test}" method="get">
+        <div class="form-group">
+            <label for="input">输入内容:</label>
+            <input type="text" id="input" name="input" th:value="${input}" placeholder="请输入要测试的内容">
+        </div>
+        <button type="submit">测试输入</button>
+    </form>
+    
+    <div th:if="${input != null}">
+        <h2>测试结果</h2>
+        <div th:class="${blocked} ? 'result blocked' : 'result allowed'">
+            <p><strong>输入内容:</strong> <span th:text="${input}"></span></p>
+            <p><strong>检测结果:</strong> 
+                <span th:if="${blocked}">阻止</span>
+                <span th:unless="${blocked}">允许</span>
+            </p>
+            <p><strong>触发规则:</strong> 
+                <span th:text="${hitRule ?: '无'}"></span>
+            </p>
+        </div>
+    </div>
+</body>
+</html>
