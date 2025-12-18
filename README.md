@@ -59,6 +59,9 @@ input-security.enabled=true
 
 # Set working mode: monitor (monitor only) or block (intercept) (default is monitor)
 input-security.mode=block
+
+# Set environment mode: dev (development) or prod (production) (default is dev)
+input-security.environment=dev
 ```
 
 Enable component scanning in the `application` entry class:
@@ -85,6 +88,8 @@ You can test on this page:
 ```
 http://your-ip:your-port/input-security-view/test
 ```
+
+> Note: In production environment (`input-security.environment=prod`), the test page (`/input-security-view/test`) is inaccessible for security reasons. The root path (`/input-security-view/`) will redirect to the events page instead of the test page.
 
 In the management interface, you can:
 - View all built-in security rules
@@ -115,6 +120,7 @@ Log format example:
 |--------------------|-------------|---------------|
 | input-security.enabled | Whether to enable security detection feature | true |
 | input-security.mode | Working mode (monitor/block) | monitor |
+| input-security.environment | Environment mode (dev/prod) | dev |
 
 ## Built-in Security Rules
 

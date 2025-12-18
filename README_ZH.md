@@ -59,6 +59,9 @@ input-security.enabled=true
 
 # 设置工作模式：monitor（仅监控）或 block（拦截）（默认为 monitor）
 input-security.mode=block
+
+# 设置环境模式：dev（开发环境）或 prod（生产环境）（默认为 dev）
+input-security.environment=dev
 ```
 
 在 `application` 入口类开启组件扫描
@@ -85,6 +88,8 @@ http://your-ip:your-port/input-security-view/events
 ```
 http://your-ip:your-port/input-security-view/test
 ```
+
+> 注意：在生产环境（`input-security.environment=prod`）中，出于安全考虑，测试页面（`/input-security-view/test`）无法访问。根路径（`/input-security-view/`）将重定向到事件页面而不是测试页面。
 
 在管理界面中，你可以：
 - 查看所有内置的安全规则
@@ -115,6 +120,7 @@ http://your-ip:your-port/input-security-view/test
 |--------|------|--------|
 | input-security.enabled | 是否启用安全检测功能 | true |
 | input-security.mode | 工作模式（monitor/block） | monitor |
+| input-security.environment | 环境模式（dev/prod） | dev |
 
 ## 内置安全规则
 

@@ -28,6 +28,11 @@ public class ViewController {
 
     @GetMapping("/test")
     public String testInput(@RequestParam(required = false) String input, Model model) {
+        // 在生产环境中拒绝访问
+        if (properties.getEnvironment() == InputSecurityProperties.Environment.PROD) {
+            throw new RuntimeException("Access denied in production environment");
+        }
+        
         if (input != null) {
             String rule = ruleEngine.match(input);
             model.addAttribute("input", input);
@@ -49,6 +54,10 @@ public class ViewController {
     
     @GetMapping("/")
     public String index() {
+        // 在生产环境中重定向到events页面而不是test页面
+        if (properties.getEnvironment() == InputSecurityProperties.Environment.PROD) {
+            return "redirect:/input-security-view/events";
+        }
         return "redirect:/input-security-view/test";
     }
 }

@@ -11,11 +11,17 @@ public class InputSecurityProperties {
 
     private boolean enabled = true;
     private Mode mode = Mode.MONITOR;
+    private Environment environment = Environment.DEV; // 默认为开发环境
     private List<SecurityRule> rules = new ArrayList<>();
 
     public enum Mode {
         MONITOR,  // 监控模式
         BLOCK  // 拦截模式
+    }
+    
+    public enum Environment {
+        DEV,  // 开发环境
+        PROD  // 生产环境
     }
 
     public List<SecurityRule> getRules() {
@@ -99,6 +105,8 @@ public class InputSecurityProperties {
     }
     public Mode getMode() { return mode; }
     public void setMode(Mode mode) { this.mode = mode; }
+    public Environment getEnvironment() { return environment; }
+    public void setEnvironment(Environment environment) { this.environment = environment; }
     public void setRules(List<SecurityRule> rules) {
         this.rules = rules;
     }
