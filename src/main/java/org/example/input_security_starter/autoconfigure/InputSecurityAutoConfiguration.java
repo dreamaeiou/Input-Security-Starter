@@ -2,7 +2,7 @@ package org.example.input_security_starter.autoconfigure;
 
 
 import org.example.input_security_starter.config.InputSecurityProperties;
-import org.example.input_security_starter.engine.RuleEngine;
+import org.example.input_security_starter.engine.OptimizedRuleEngine;
 import org.example.input_security_starter.event.EventRecorder;
 import org.example.input_security_starter.filiter.InputSecurityFilter;
 import org.example.input_security_starter.web.InputSecurityController;
@@ -23,8 +23,8 @@ public class InputSecurityAutoConfiguration {
 
     // 规则引擎
     @Bean
-    public RuleEngine ruleEngine(InputSecurityProperties properties) {
-        RuleEngine engine = new RuleEngine();
+    public OptimizedRuleEngine ruleEngine(InputSecurityProperties properties) {
+        OptimizedRuleEngine engine = new OptimizedRuleEngine();
         engine.loadRules(properties.getRules());
         return engine;
     }
@@ -40,7 +40,7 @@ public class InputSecurityAutoConfiguration {
     @Bean
     public FilterRegistrationBean<InputSecurityFilter> inputSecurityFilter(
             InputSecurityProperties properties,
-            RuleEngine ruleEngine,
+            OptimizedRuleEngine ruleEngine,
             EventRecorder eventRecorder) {
         FilterRegistrationBean<InputSecurityFilter> registration = new FilterRegistrationBean<>();
         registration.setFilter(new InputSecurityFilter(properties, ruleEngine, eventRecorder));

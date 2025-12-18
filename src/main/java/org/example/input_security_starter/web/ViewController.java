@@ -1,7 +1,7 @@
 package org.example.input_security_starter.web;
 
 import org.example.input_security_starter.config.InputSecurityProperties;
-import org.example.input_security_starter.engine.RuleEngine;
+import org.example.input_security_starter.engine.OptimizedRuleEngine;
 import org.example.input_security_starter.event.EventRecorder;
 import org.example.input_security_starter.event.SecurityEvent;
 import org.springframework.stereotype.Controller;
@@ -16,11 +16,11 @@ import java.util.List;
 @RequestMapping("/input-security-view")
 public class ViewController {
 
-    private final RuleEngine ruleEngine;
+    private final OptimizedRuleEngine ruleEngine;
     private final EventRecorder eventRecorder;
     private final InputSecurityProperties properties;
 
-    public ViewController(RuleEngine ruleEngine, EventRecorder eventRecorder, InputSecurityProperties properties) {
+    public ViewController(OptimizedRuleEngine ruleEngine, EventRecorder eventRecorder, InputSecurityProperties properties) {
         this.ruleEngine = ruleEngine;
         this.eventRecorder = eventRecorder;
         this.properties = properties;

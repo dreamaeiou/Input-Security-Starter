@@ -1,7 +1,7 @@
 package org.example.input_security_starter.web;
 
 
-import org.example.input_security_starter.engine.RuleEngine;
+import org.example.input_security_starter.engine.OptimizedRuleEngine;
 import org.example.input_security_starter.event.EventRecorder;
 import org.example.input_security_starter.event.SecurityEvent;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,10 +17,10 @@ import java.util.Map;
 @RequestMapping("/input-security-api")
 public class InputSecurityController {
 
-    private final RuleEngine ruleEngine;
+    private final OptimizedRuleEngine ruleEngine;
     private final EventRecorder eventRecorder;
 
-    public InputSecurityController(RuleEngine ruleEngine, EventRecorder eventRecorder) {
+    public InputSecurityController(OptimizedRuleEngine ruleEngine, EventRecorder eventRecorder) {
         this.ruleEngine = ruleEngine;
         this.eventRecorder = eventRecorder;
     }

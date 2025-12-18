@@ -1,7 +1,7 @@
 package org.example.input_security_starter.filiter;
 
 import org.example.input_security_starter.config.InputSecurityProperties;
-import org.example.input_security_starter.engine.RuleEngine;
+import org.example.input_security_starter.engine.OptimizedRuleEngine;
 import org.example.input_security_starter.event.EventRecorder;
 import org.springframework.http.HttpStatus;
 import org.example.input_security_starter.event.SecurityEvent;
@@ -15,10 +15,10 @@ import java.util.Enumeration;
 public class InputSecurityFilter implements Filter {
 
     private final InputSecurityProperties properties;
-    private final RuleEngine ruleEngine;
+    private final OptimizedRuleEngine ruleEngine;
     private final EventRecorder eventRecorder;
 
-    public InputSecurityFilter(InputSecurityProperties properties, RuleEngine ruleEngine, EventRecorder eventRecorder) {
+    public InputSecurityFilter(InputSecurityProperties properties, OptimizedRuleEngine ruleEngine, EventRecorder eventRecorder) {
         this.properties = properties;
         this.ruleEngine = ruleEngine;
         this.eventRecorder = eventRecorder;

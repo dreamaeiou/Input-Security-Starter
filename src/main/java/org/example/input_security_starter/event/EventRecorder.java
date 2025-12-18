@@ -47,10 +47,10 @@ public class EventRecorder {
     
     private void writeToLogFile(SecurityEvent event) {
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(LOG_FILE_PATH, true))) {
-            SimpleDateFormat isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
+            SimpleDateFormat isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
             String logEntry = String.format("%s | %s | %s | %s | %s%n",
                     isoFormat.format(event.getTimestamp()),
-                    event.getIpAddress() != null ? event.getIpAddress() : "UNKNOWN",
+                    event.getIpAddress() != null ? event.getIpAddress() : "127.0.0.1",
                     event.getRuleName(),
                     event.getMethod(),
                     event.getInputSnippet());

@@ -17,6 +17,8 @@ Input Security Starter is a Spring Boot-based security input detection starter t
 
 Drawing inspiration from Swagger's design concept, this component provides an embedded visual management interface, allowing developers to view security rules and monitor attack events conveniently.
 
+The starter now uses optimized regular expression matching for accurate pattern detection while maintaining high performance through pre-compilation and priority-based matching.
+
 ## Features
 
 1. **Zero Intrusion Integration** - Automatically assembled through Spring Boot Starter mechanism without modifying existing code
@@ -26,6 +28,7 @@ Drawing inspiration from Swagger's design concept, this component provides an em
 5. **Security Event Logging** - Automatically records all detected security events to a text file
 6. **Highly Configurable** - Specific rules can be enabled/disabled or rule parameters adjusted via configuration file
 7. **Thymeleaf Support** - Provides a Thymeleaf-based web interface for interactive operations
+8. **Optimized Pattern Matching** - Uses pre-compiled patterns with priority-based matching for high performance
 
 ## System Requirements
 
@@ -42,7 +45,7 @@ After installing the project to your local repository via Maven install, add the
 <dependency>
     <groupId>org.example</groupId>
     <artifactId>input-security-starter</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>1.0.0</version>
 </dependency>
 ```
 
@@ -115,70 +118,68 @@ Log format example:
 
 ## Built-in Security Rules
 
-This starter includes various common security rules, including:
+This starter includes various common security rules, which are grouped by attack type:
 
-1. **XSS Attack Protection**
-   - Script tag detection (`xss-script-tag`)
-   - Event handler detection (onclick, etc.) (`xss-on-event`)
-   - JavaScript/VBScript URI detection (`xss-javascript-uri`, `xss-vbscript-uri`)
-   - Data URI detection (`xss-data-uri`)
-   - SVG Script detection (`xss-svg-script`)
-   - IMG src JavaScript injection (`xss-img-src-xss`)
-   - Object/Embed tag detection (`xss-object-tag`, `xss-embed-tag`)
-   - Expression detection (`xss-expression`)
-   - Meta refresh detection (`xss-meta-refresh`)
-   - Import statement detection (`xss-import-statement`)
-   - Base href manipulation (`xss-base-href`)
-   - Iframe tag detection (`xss-iframe-tag`)
-   - Form action JavaScript injection (`xss-form-action`)
-   - Style tag with expression (`xss-style-tag`)
-   - Link tag with JavaScript URI (`xss-link-tag`)
-   - Body onload event (`xss-body-tag`)
-   - Background image URL injection (`xss-background-prop`)
+1. **XSS Attack Protection** (`xss-attack`)
+   - Script tag detection
+   - Event handler detection (onclick, etc.)
+   - JavaScript/VBScript URI detection
+   - Data URI detection
+   - SVG Script detection
+   - IMG src JavaScript injection
+   - Object/Embed tag detection
+   - Expression detection
+   - Meta refresh detection
+   - Import statement detection
+   - Base href manipulation
+   - Iframe tag detection
+   - Form action JavaScript injection
+   - Style tag with expression
+   - Link tag with JavaScript URI
+   - Body onload event
+   - Background image URL injection
 
-2. **SQL Injection Protection**
-   - UNION SELECT statement detection (`sql-union-select`)
-   - EXEC/EXECUTE statement detection (`sql-exec`)
-   - DROP TABLE statement detection (`sql-drop-table`)
-   - CREATE TABLE statement detection (`sql-create-table`)
-   - INSERT INTO statement detection (`sql-insert-into`)
-   - UPDATE SET statement detection (`sql-update-set`)
-   - DELETE FROM statement detection (`sql-delete-from`)
-   - SQL comment detection (`sql-comment`)
-   - Sleep function detection (`sql-sleep`)
-   - Benchmark function detection (`sql-benchmark`)
-   - Backtick injection detection (`sql-backtick-injection`)
-   - Hexadecimal injection detection (`sql-hex-injection`)
-   - CHAR function injection (`sql-char-injection`)
-   - NVARCHAR cast detection (`sql-nvarchar-cast`)
+2. **SQL Injection Protection** (`sql-injection`)
+   - UNION SELECT statement detection
+   - EXEC/EXECUTE statement detection
+   - DROP TABLE statement detection
+   - CREATE TABLE statement detection
+   - INSERT INTO statement detection
+   - UPDATE SET statement detection
+   - DELETE FROM statement detection
+   - SQL comment detection
+   - Sleep function detection
+   - Benchmark function detection
+   - Backtick injection detection
+   - Hexadecimal injection detection
+   - CHAR function injection
+   - NVARCHAR cast detection
 
-3. **Code Execution Protection**
-   - Eval/Timeout functions detection (`eval-js`)
-   - System command functions detection (`system-command`)
-   - Reflection invoke detection (`reflection-invoke`)
+3. **Code Execution Protection** (`code-execution`)
+   - Eval/Timeout functions detection
+   - System command functions detection
+   - Reflection invoke detection
+   - File operation functions detection
 
-4. **File Operation Protection**
-   - File operation functions detection (`file-operation`)
+4. **SSRF (Server-Side Request Forgery) Protection** (`ssrf-attack`)
+   - URL connection classes detection
+   - Curl/Wget command detection
+   - File protocol access detection
 
-5. **SSRF (Server-Side Request Forgery) Protection**
-   - URL connection classes detection (`ssrf-url-connection`)
-   - Curl/Wget command detection (`ssrf-curl`)
-   - File protocol access detection (`ssrf-file-protocol`)
+5. **Command Injection Protection** (`command-injection`)
+   - Pipe and special characters detection
+   - Shell command keywords detection
 
-6. **Command Injection Protection**
-   - Pipe and special characters detection (`command-injection-pipe`)
-   - Shell command keywords detection (`command-injection-shell-keywords`)
+6. **Path Traversal Protection** (`path-traversal`)
+   - Path traversal detection
+   - Encoded path traversal detection
 
-7. **Path Traversal Protection**
-   - Path traversal detection (`path-traversal`)
-   - Encoded path traversal detection (`path-traversal-encoded`)
+7. **LDAP Injection Protection** (`ldap-injection`)
+   - LDAP injection detection
 
-8. **LDAP Injection Protection**
-   - LDAP injection detection (`ldap-injection`)
-
-9. **XXE (XML External Entity) Injection Protection**
-   - XML entity declaration detection (`xxe-entity`)
-   - XML doctype declaration detection (`xxe-doctype`)
+8. **XXE (XML External Entity) Injection Protection** (`xxe-injection`)
+   - XML entity declaration detection
+   - XML doctype declaration detection
 
 ## Custom Rules
 
@@ -190,9 +191,17 @@ This project is implemented based on the following technologies:
 
 - Spring Boot auto-configuration mechanism
 - Servlet Filter technology
-- Regular expression matching engine
+- Optimized regular expression matching with pre-compilation and priority-based ordering
 - RESTful API design
 - Thymeleaf template engine
+
+## Performance Improvements
+
+We've optimized regular expression matching with the following techniques:
+
+1. **Pre-compilation**: All patterns are pre-compiled during initialization for optimal runtime performance
+2. **Priority-based Matching**: High threat level rules are matched first to detect critical attacks early
+3. **Accurate Detection**: Full regular expression syntax support ensures accurate pattern matching
 
 ## License
 

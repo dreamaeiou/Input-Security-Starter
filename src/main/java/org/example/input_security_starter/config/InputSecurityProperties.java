@@ -20,258 +20,62 @@ public class InputSecurityProperties {
 
     public List<SecurityRule> getRules() {
         if (rules.isEmpty()) {
-            
-            // XSS 攻击规则
+            // 提供默认规则（fallback）
+
+            // XSS 攻击规则 - 统一归类
             rules.add(createRule(
-                    "xss-script-tag",
-                    "(?i)(<\\s*script[^>]*>|</\\s*script\\s*>)",
+                    "xss-attack",
+                    "(?i)(<\\s*script[^>]*>|</\\s*script\\s*>|on(load|error|focus|blur|click|dblclick|mousedown|mouseup|mouseover|mousemove|mouseout|keydown|keypress|keyup|submit|reset|change|select)\\s*=|javascript:\\s*|vbscript:\\s*|data:\\s*text/html|<\\s*svg[^>]*>.*<\\s*script|<\\s*img[^>]+src\\s*=\\s*['\"]?\\s*javascript:|<\\s*object[^>]*>|<\\s*embed[^>]*>|expression\\s*\\(|<\\s*meta[^>]+refresh[^>]*>|<\\s*import[^>]*>|<\\s*base[^>]+href[^>]*>|<\\s*iframe[^>]*>|<\\s*form[^>]+action\\s*=\\s*['\"]?\\s*javascript:|<\\s*style[^>]*>.*expression\\s*\\(|<\\s*link[^>]*rel\\s*=\\s*['\"]?stylesheet['\"]?[^>]*href\\s*=\\s*['\"]?javascript:|<\\s*body[^>]*onload\\s*=|background-image\\s*:.*url\\s*\\()",
                     "high",
                     true));
+
+            // 代码执行规则 - 统一归类 (放在SQL注入之前以确保优先匹配)
             rules.add(createRule(
-                    "xss-on-event",
-                    "(?i)on(load|error|focus|blur|click|dblclick|mousedown|mouseup|mouseover|mousemove|mouseout|keydown|keypress|keyup|submit|reset|change|select)\\s*=\\s*['\"]?[^\\s>]",
+                    "code-execution",
+                    "(?i)\\b(eval|setTimeout|setInterval|system|exec|shell_exec|passthru|popen|proc_open|file_get_contents|fopen|fwrite|fread|readfile)\\s*\\(",
                     "high",
                     true));
+
+            // SQL 注入规则 - 统一归类
             rules.add(createRule(
-                    "xss-javascript-uri",
-                    "(?i)javascript:\\s*[^\"]",
+                    "sql-injection",
+                    "\\bunion\\s+(?:all\\s+)?select\\b|\\bselect\\s+[^;]+?\\s+from\\b|\\bexec(?:ute)?\\s+\\w+|\\bdrop\\s+table\\b|\\bcreate\\s+table\\b|\\binsert\\s+into\\b|\\bupdate\\s+\\w+[^;]*?\\s+set\\b|\\bdelete\\s+from\\b|'\\s+(?:--|#|/\\*)|\\b(?:sleep|benchmark)\\s*\\(|`[^`]*['\"][^`]*`|\\b0x[0-9a-fA-F]+\\b|\\bchar\\s*\\([^)]*\\)|\\bcast\\s*\\([^)]*\\s+as\\s+nvarchar\\b\n",
                     "high",
                     true));
+
+            // 命令注入规则 - 统一归类
             rules.add(createRule(
-                    "xss-vbscript-uri",
-                    "(?i)vbscript:\\s*[^\"]",
+                    "command-injection",
+                    "(?i)(?:^|[|&;`]|&&|\\|\\|)\\s*(rm|del|mv|cp|mkdir|touch|echo|cat|ls|dir|ps|kill|ifconfig|ipconfig|wget|curl|nc|netcat|ping)\\b|\\b(rm|del|mv|cp|mkdir|touch|echo|cat|ls|dir|ps|kill|ifconfig|ipconfig|wget|curl|nc|netcat|ping)\\b(?:\\s+[^\\s|&;`]*)*\\s*(?:$|[|&;`]|&&|\\|\\|)\n",
+                    "high",
+                    true));
+
+            // SSRF相关 - 统一归类
+            rules.add(createRule(
+                    "ssrf-attack",
+                    "(?i)\\b(URLConnection|HttpClient|curl|wget)\\b|file://|[\\\\./]*(etc|windows|winnt)[\\\\./]+passwd",
                     "medium",
                     true));
-            rules.add(createRule(
-                    "xss-data-uri",
-                    "(?i)data:\\s*text/html",
-                    "medium",
-                    true));
-            rules.add(createRule(
-                    "xss-svg-script",
-                    "(?i)<\\s*svg[^>]*>.*<\\s*script",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "xss-img-src-xss",
-                    "(?i)<\\s*img[^>]+src\\s*=\\s*['\"]?\\s*javascript:",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "xss-object-tag",
-                    "(?i)<\\s*object[^>]*>",
-                    "medium",
-                    true));
-            rules.add(createRule(
-                    "xss-embed-tag",
-                    "(?i)<\\s*embed[^>]*>",
-                    "medium",
-                    true));
-            rules.add(createRule(
-                    "xss-expression",
-                    "(?i)expression\\s*\\(",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "xss-meta-refresh",
-                    "(?i)<\\s*meta[^>]+refresh[^>]*>",
-                    "medium",
-                    true));
-            rules.add(createRule(
-                    "xss-import-statement",
-                    "(?i)<\\s*import[^>]*>",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "xss-base-href",
-                    "(?i)<\\s*base[^>]+href[^>]*>",
-                    "medium",
-                    true));
-            rules.add(createRule(
-                    "xss-iframe-tag",
-                    "(?i)<\\s*iframe[^>]*>",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "xss-form-action",
-                    "(?i)<\\s*form[^>]+action\\s*=\\s*['\"]?\\s*javascript:",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "xss-style-tag",
-                    "(?i)<\\s*style[^>]*>.*expression\\s*\\(",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "xss-link-tag",
-                    "(?i)<\\s*link[^>]*rel\\s*=\\s*['\"]?stylesheet['\"]?[^>]*href\\s*=\\s*['\"]?javascript:",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "xss-body-tag",
-                    "(?i)<\\s*body[^>]*onload\\s*=",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "xss-background-prop",
-                    "(?i)background-image\\s*:.*url\\s*\\(",
-                    "medium",
-                    true));
-            
-            // SQL 注入规则
-            rules.add(createRule(
-                    "sql-union-select",
-                    "(?i)(union\\s+(all\\s*)?select|select\\s+.*from)",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "sql-exec",
-                    "(?i)(exec|execute)\\s+.*",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "sql-drop-table",
-                    "(?i)drop\\s+table",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "sql-create-table",
-                    "(?i)create\\s+table",
-                    "medium",
-                    true));
-            rules.add(createRule(
-                    "sql-insert-into",
-                    "(?i)insert\\s+into\\s+.*",
-                    "medium",
-                    true));
-            rules.add(createRule(
-                    "sql-update-set",
-                    "(?i)update\\s+.*\\s+set\\s+.*",
-                    "medium",
-                    true));
-            rules.add(createRule(
-                    "sql-delete-from",
-                    "(?i)delete\\s+from\\s+.*",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "sql-comment",
-                    "(?i)'\\s*(--|#|/\\*|\\*/)",
-                    "medium",
-                    true));
-            rules.add(createRule(
-                    "sql-sleep",
-                    "(?i)sleep\\s*\\(",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "sql-benchmark",
-                    "(?i)benchmark\\s*\\(",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "sql-backtick-injection",
-                    "(?i)`[^`]*('|\\\")[^`]*`",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "sql-hex-injection",
-                    "(?i)0x[0-9a-fA-F]+",
-                    "medium",
-                    true));
-            rules.add(createRule(
-                    "sql-char-injection",
-                    "(?i)char\\s*\\([^)]*\\)",
-                    "medium",
-                    true));
-            rules.add(createRule(
-                    "sql-nvarchar-cast",
-                    "(?i)cast\\s*\\([^)]*\\s+as\\s+nvarchar",
-                    "high",
-                    true));
-            
-            // 代码执行规则
-            rules.add(createRule(
-                    "eval-js",
-                    "(?i)\\b(eval|setTimeout|setInterval)\\s*\\(",
-                    "medium",
-                    true));
-            rules.add(createRule(
-                    "system-command",
-                    "(?i)\\b(system|exec|shell_exec|passthru|popen|proc_open)\\s*\\(",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "reflection-invoke",
-                    "(?i)\\.invoke\\s*\\(",
-                    "high",
-                    true));
-                    
-            // 文件操作相关
-            rules.add(createRule(
-                    "file-operation",
-                    "(?i)\\b(file_get_contents|fopen|fwrite|fread|readfile)\\s*\\(",
-                    "high",
-                    true));
-                    
-            // SSRF相关
-            rules.add(createRule(
-                    "ssrf-url-connection",
-                    "(?i)URLConnection|HttpClient",
-                    "medium",
-                    true));
-            rules.add(createRule(
-                    "ssrf-curl",
-                    "(?i)\\b(curl|wget)\\s+",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "ssrf-file-protocol",
-                    "(?i)file://|[\\\\./]*(etc|windows|winnt)[\\\\./]+passwd",
-                    "high",
-                    true));
-                    
-            // 命令注入规则
-            rules.add(createRule(
-                    "command-injection-pipe",
-                    "(?i)[|&;`\\n\\r\\t]",
-                    "high",
-                    true));
-            rules.add(createRule(
-                    "command-injection-shell-keywords",
-                    "(?i)\\b(cd|dir|ls|cat|cp|mv|rm|ps|kill|ifconfig|ipconfig)\\b",
-                    "medium",
-                    true));
-                    
-            // 路径遍历规则
+
+            // 路径遍历规则 - 统一归类
             rules.add(createRule(
                     "path-traversal",
-                    "(?i)(\\.\\.[/\\\\])|(\\.\\.[/\\\\])|(\\.\\.[/\\\\])",
+                    "(?i)((\\.\\.[/\\\\])|(\\.\\.[/\\\\])|(\\.\\.[/\\\\])|(%2e|%2e%2e|%c0%ae|%uff0e|%uff0e%uff0e))",
                     "high",
                     true));
-            rules.add(createRule(
-                    "path-traversal-encoded",
-                    "(?i)(%2e|%2e%2e|%c0%ae|%uff0e|%uff0e%uff0e)",
-                    "high",
-                    true));
-                    
-            // LDAP注入规则
+
+            // LDAP注入规则 - 统一归类
             rules.add(createRule(
                     "ldap-injection",
-                    "(?i)[\\n\\r\\t]*\\*.*[\\n\\r\\t]*\\)|[\\n\\r\\t]*\\(|[\\n\\r\\t]+or[\\n\\r\\t]+|[\\n\\r\\t]+and[\\n\\r\\t]+",
+                    "(?i)(\\([^)]*(?:\\||&|\\*).*\\)|\\*.*\\))",
                     "medium",
                     true));
-                    
-            // XXE注入规则
+
+            // XXE注入规则 - 统一归类
             rules.add(createRule(
-                    "xxe-entity",
-                    "(?i)<!entity\\s",
+                    "xxe-injection",
+                    "(?i)(<!\\s*entity\\s|<!\\s*doctype\\s)",
                     "high",
-                    true));
-            rules.add(createRule(
-                    "xxe-doctype",
-                    "(?i)<!doctype\\s",
-                    "medium",
                     true));
         }
         return new ArrayList<>(rules); // 返回副本以防止外部修改
@@ -287,15 +91,15 @@ public class InputSecurityProperties {
     }
 
     // 其他 getter/setter
-    public boolean isEnabled() { 
-        return enabled; 
+    public boolean isEnabled() {
+        return enabled;
     }
-    public void setEnabled(boolean enabled) { 
-        this.enabled = enabled; 
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
     }
     public Mode getMode() { return mode; }
     public void setMode(Mode mode) { this.mode = mode; }
-    public void setRules(List<SecurityRule> rules) { 
-        this.rules = rules; 
+    public void setRules(List<SecurityRule> rules) {
+        this.rules = rules;
     }
 }

@@ -17,6 +17,8 @@ Input Security Starter 是一个基于 Spring Boot 的安全输入检测 starter
 
 该组件借鉴了 Swagger 的设计理念，提供了内嵌的可视化管理界面，方便开发者查看安全规则和监控攻击事件。
 
+该 starter 现在使用优化的正则表达式匹配来确保精确的模式检测，同时通过预编译和基于优先级的匹配来保持高性能。
+
 ## 功能特性
 
 1. **零侵入式集成** - 通过 Spring Boot Starter 机制自动装配，无需修改现有代码
@@ -26,6 +28,7 @@ Input Security Starter 是一个基于 Spring Boot 的安全输入检测 starter
 5. **安全事件日志** - 自动记录所有检测到的安全事件到文本文件
 6. **高度可配置** - 可通过配置文件启用/禁用特定规则或调整规则参数
 7. **Thymeleaf 支持** - 提供基于 Thymeleaf 的 Web 界面，便于交互式操作
+8. **优化的模式匹配** - 使用预编译模式和基于优先级的匹配实现高性能
 
 ## 系统要求
 
@@ -42,7 +45,7 @@ Input Security Starter 是一个基于 Spring Boot 的安全输入检测 starter
 <dependency>
     <groupId>org.example</groupId>
     <artifactId>input-security-starter</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>1.0.0</version>
 </dependency>
 ```
 
@@ -115,70 +118,68 @@ http://your-ip:your-port/input-security-view/test
 
 ## 内置安全规则
 
-该 starter 内置了多种常见的安全规则，包括：
+该 starter 内置了多种常见的安全规则，按攻击类型分组：
 
-1. **XSS 攻击防护**
-   - Script 标签检测 (`xss-script-tag`)
-   - 事件处理器检测（onclick 等）(`xss-on-event`)
-   - JavaScript/VBScript URI 检测 (`xss-javascript-uri`, `xss-vbscript-uri`)
-   - Data URI 检测 (`xss-data-uri`)
-   - SVG Script 检测 (`xss-svg-script`)
-   - IMG src JavaScript 注入 (`xss-img-src-xss`)
-   - Object/Embed 标签检测 (`xss-object-tag`, `xss-embed-tag`)
-   - 表达式检测 (`xss-expression`)
-   - Meta refresh 检测 (`xss-meta-refresh`)
-   - Import 语句检测 (`xss-import-statement`)
-   - Base href 操作 (`xss-base-href`)
-   - Iframe 标签检测 (`xss-iframe-tag`)
-   - Form action JavaScript 注入 (`xss-form-action`)
-   - Style 标签含表达式 (`xss-style-tag`)
-   - Link 标签含 JavaScript URI (`xss-link-tag`)
-   - Body onload 事件 (`xss-body-tag`)
-   - 背景图片 URL 注入 (`xss-background-prop`)
+1. **XSS 攻击防护** (`xss-attack`)
+   - Script 标签检测
+   - 事件处理器检测（onclick 等）
+   - JavaScript/VBScript URI 检测
+   - Data URI 检测
+   - SVG Script 检测
+   - IMG src JavaScript 注入
+   - Object/Embed 标签检测
+   - 表达式检测
+   - Meta refresh 检测
+   - Import 语句检测
+   - Base href 操作
+   - Iframe 标签检测
+   - Form action JavaScript 注入
+   - Style 标签含表达式
+   - Link 标签含 JavaScript URI
+   - Body onload 事件
+   - 背景图片 URL 注入
 
-2. **SQL 注入防护**
-   - UNION SELECT 语句检测 (`sql-union-select`)
-   - EXEC/EXECUTE 语句检测 (`sql-exec`)
-   - DROP TABLE 语句检测 (`sql-drop-table`)
-   - CREATE TABLE 语句检测 (`sql-create-table`)
-   - INSERT INTO 语句检测 (`sql-insert-into`)
-   - UPDATE SET 语句检测 (`sql-update-set`)
-   - DELETE FROM 语句检测 (`sql-delete-from`)
-   - SQL 注释检测 (`sql-comment`)
-   - Sleep 函数检测 (`sql-sleep`)
-   - Benchmark 函数检测 (`sql-benchmark`)
-   - 反引号注入检测 (`sql-backtick-injection`)
-   - 十六进制注入检测 (`sql-hex-injection`)
-   - CHAR 函数注入 (`sql-char-injection`)
-   - NVARCHAR 类型转换检测 (`sql-nvarchar-cast`)
+2. **SQL 注入防护** (`sql-injection`)
+   - UNION SELECT 语句检测
+   - EXEC/EXECUTE 语句检测
+   - DROP TABLE 语句检测
+   - CREATE TABLE 语句检测
+   - INSERT INTO 语句检测
+   - UPDATE SET 语句检测
+   - DELETE FROM 语句检测
+   - SQL 注释检测
+   - Sleep 函数检测
+   - Benchmark 函数检测
+   - 反引号注入检测
+   - 十六进制注入检测
+   - CHAR 函数注入
+   - NVARCHAR 类型转换检测
 
-3. **代码执行防护**
-   - Eval/Timeout 函数检测 (`eval-js`)
-   - 系统命令函数检测 (`system-command`)
-   - 反射调用检测 (`reflection-invoke`)
+3. **代码执行防护** (`code-execution`)
+   - Eval/Timeout 函数检测
+   - 系统命令函数检测
+   - 反射调用检测
+   - 文件操作函数检测
 
-4. **文件操作防护**
-   - 文件操作函数检测 (`file-operation`)
+4. **SSRF（服务器端请求伪造）防护** (`ssrf-attack`)
+   - URL 连接类检测
+   - Curl/Wget 命令检测
+   - 文件协议访问检测
 
-5. **SSRF（服务器端请求伪造）防护**
-   - URL 连接类检测 (`ssrf-url-connection`)
-   - Curl/Wget 命令检测 (`ssrf-curl`)
-   - 文件协议访问检测 (`ssrf-file-protocol`)
+5. **命令注入防护** (`command-injection`)
+   - 管道符及特殊字符检测
+   - Shell 命令关键字检测
 
-6. **命令注入防护**
-   - 管道符及特殊字符检测 (`command-injection-pipe`)
-   - Shell 命令关键字检测 (`command-injection-shell-keywords`)
+6. **路径遍历防护** (`path-traversal`)
+   - 路径遍历检测
+   - 编码后的路径遍历检测
 
-7. **路径遍历防护**
-   - 路径遍历检测 (`path-traversal`)
-   - 编码后的路径遍历检测 (`path-traversal-encoded`)
+7. **LDAP 注入防护** (`ldap-injection`)
+   - LDAP 注入检测
 
-8. **LDAP 注入防护**
-   - LDAP 注入检测 (`ldap-injection`)
-
-9. **XXE（XML 外部实体）注入防护**
-   - XML 实体声明检测 (`xxe-entity`)
-   - XML 文档类型声明检测 (`xxe-doctype`)
+8. **XXE（XML 外部实体）注入防护** (`xxe-injection`)
+   - XML 实体声明检测
+   - XML 文档类型声明检测
 
 ## 自定义规则
 
@@ -190,9 +191,17 @@ http://your-ip:your-port/input-security-view/test
 
 - Spring Boot 自动装配机制
 - Servlet Filter 技术
-- 正则表达式匹配引擎
+- 优化的正则表达式匹配（预编译和基于优先级的排序）
 - RESTful API 设计
 - Thymeleaf 模板引擎
+
+## 性能优化
+
+我们通过对正则表达式匹配进行以下优化来提高性能：
+
+1. **预编译**：所有模式在初始化期间预编译，以实现最佳运行时性能
+2. **基于优先级的匹配**：高威胁级别规则优先匹配，尽早检测关键攻击
+3. **精确检测**：完整支持正则表达式语法，确保精确的模式匹配
 
 ## 许可证
 
