@@ -46,7 +46,7 @@ public class InputSecurityProperties {
             // 命令注入规则 - 统一归类
             rules.add(createRule(
                     "command-injection",
-                    "(?i)(?:^|[|&;`]|&&|\\|\\|)\\s*(rm|del|mv|cp|mkdir|touch|echo|cat|ls|dir|ps|kill|ifconfig|ipconfig|wget|curl|nc|netcat|ping)\\b|\\b(rm|del|mv|cp|mkdir|touch|echo|cat|ls|dir|ps|kill|ifconfig|ipconfig|wget|curl|nc|netcat|ping)\\b(?:\\s+[^\\s|&;`]*)*\\s*(?:$|[|&;`]|&&|\\|\\|)\n",
+                    "(?i)(?:^|[|&;`]|&&|\\|\\|)\\s*(rm|del|mv|cp|mkdir|touch|echo|cat|ls|dir|ps|kill|ifconfig|ipconfig|wget|curl|nc|netcat|ping)\\b|\\b(rm|del|mv|cp|mkdir|touch|echo|cat|ls|dir|ps|kill|ifconfig|ipconfig|wget|curl|nc|netcat|ping)\\b(?:\\s+[^\\s|&;`]*)*\\s*(?:$|[|&;`]|&&|\\|\\|)",
                     "high",
                     true));
 
@@ -74,7 +74,7 @@ public class InputSecurityProperties {
             // XXE注入规则 - 统一归类
             rules.add(createRule(
                     "xxe-injection",
-                    "(?i)(<!\\s*entity\\s|<!\\s*doctype\\s)",
+                    "(?i)(<!\\s*entity\\s*|<!\\s*doctype\\s*)",
                     "high",
                     true));
         }
