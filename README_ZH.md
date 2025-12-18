@@ -118,20 +118,67 @@ http://your-ip:your-port/input-security-view/test
 该 starter 内置了多种常见的安全规则，包括：
 
 1. **XSS 攻击防护**
-   - Script 标签检测
-   - 事件处理器检测（onclick 等）
-   - JavaScript/VBScript URI 检测
-   - SVG Script 检测等
+   - Script 标签检测 (`xss-script-tag`)
+   - 事件处理器检测（onclick 等）(`xss-on-event`)
+   - JavaScript/VBScript URI 检测 (`xss-javascript-uri`, `xss-vbscript-uri`)
+   - Data URI 检测 (`xss-data-uri`)
+   - SVG Script 检测 (`xss-svg-script`)
+   - IMG src JavaScript 注入 (`xss-img-src-xss`)
+   - Object/Embed 标签检测 (`xss-object-tag`, `xss-embed-tag`)
+   - 表达式检测 (`xss-expression`)
+   - Meta refresh 检测 (`xss-meta-refresh`)
+   - Import 语句检测 (`xss-import-statement`)
+   - Base href 操作 (`xss-base-href`)
+   - Iframe 标签检测 (`xss-iframe-tag`)
+   - Form action JavaScript 注入 (`xss-form-action`)
+   - Style 标签含表达式 (`xss-style-tag`)
+   - Link 标签含 JavaScript URI (`xss-link-tag`)
+   - Body onload 事件 (`xss-body-tag`)
+   - 背景图片 URL 注入 (`xss-background-prop`)
 
 2. **SQL 注入防护**
-   - UNION SELECT 语句检测
-   - DROP/CREATE TABLE 语句检测
-   - SQL 注释检测等
+   - UNION SELECT 语句检测 (`sql-union-select`)
+   - EXEC/EXECUTE 语句检测 (`sql-exec`)
+   - DROP TABLE 语句检测 (`sql-drop-table`)
+   - CREATE TABLE 语句检测 (`sql-create-table`)
+   - INSERT INTO 语句检测 (`sql-insert-into`)
+   - UPDATE SET 语句检测 (`sql-update-set`)
+   - DELETE FROM 语句检测 (`sql-delete-from`)
+   - SQL 注释检测 (`sql-comment`)
+   - Sleep 函数检测 (`sql-sleep`)
+   - Benchmark 函数检测 (`sql-benchmark`)
+   - 反引号注入检测 (`sql-backtick-injection`)
+   - 十六进制注入检测 (`sql-hex-injection`)
+   - CHAR 函数注入 (`sql-char-injection`)
+   - NVARCHAR 类型转换检测 (`sql-nvarchar-cast`)
 
-3. **其他攻击防护**
-   - 代码执行检测
-   - 文件操作检测
-   - SSRF（服务器端请求伪造）检测等
+3. **代码执行防护**
+   - Eval/Timeout 函数检测 (`eval-js`)
+   - 系统命令函数检测 (`system-command`)
+   - 反射调用检测 (`reflection-invoke`)
+
+4. **文件操作防护**
+   - 文件操作函数检测 (`file-operation`)
+
+5. **SSRF（服务器端请求伪造）防护**
+   - URL 连接类检测 (`ssrf-url-connection`)
+   - Curl/Wget 命令检测 (`ssrf-curl`)
+   - 文件协议访问检测 (`ssrf-file-protocol`)
+
+6. **命令注入防护**
+   - 管道符及特殊字符检测 (`command-injection-pipe`)
+   - Shell 命令关键字检测 (`command-injection-shell-keywords`)
+
+7. **路径遍历防护**
+   - 路径遍历检测 (`path-traversal`)
+   - 编码后的路径遍历检测 (`path-traversal-encoded`)
+
+8. **LDAP 注入防护**
+   - LDAP 注入检测 (`ldap-injection`)
+
+9. **XXE（XML 外部实体）注入防护**
+   - XML 实体声明检测 (`xxe-entity`)
+   - XML 文档类型声明检测 (`xxe-doctype`)
 
 ## 自定义规则
 

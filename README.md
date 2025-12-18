@@ -118,20 +118,67 @@ Log format example:
 This starter includes various common security rules, including:
 
 1. **XSS Attack Protection**
-   - Script tag detection
-   - Event handler detection (onclick, etc.)
-   - JavaScript/VBScript URI detection
-   - SVG Script detection, etc.
+   - Script tag detection (`xss-script-tag`)
+   - Event handler detection (onclick, etc.) (`xss-on-event`)
+   - JavaScript/VBScript URI detection (`xss-javascript-uri`, `xss-vbscript-uri`)
+   - Data URI detection (`xss-data-uri`)
+   - SVG Script detection (`xss-svg-script`)
+   - IMG src JavaScript injection (`xss-img-src-xss`)
+   - Object/Embed tag detection (`xss-object-tag`, `xss-embed-tag`)
+   - Expression detection (`xss-expression`)
+   - Meta refresh detection (`xss-meta-refresh`)
+   - Import statement detection (`xss-import-statement`)
+   - Base href manipulation (`xss-base-href`)
+   - Iframe tag detection (`xss-iframe-tag`)
+   - Form action JavaScript injection (`xss-form-action`)
+   - Style tag with expression (`xss-style-tag`)
+   - Link tag with JavaScript URI (`xss-link-tag`)
+   - Body onload event (`xss-body-tag`)
+   - Background image URL injection (`xss-background-prop`)
 
 2. **SQL Injection Protection**
-   - UNION SELECT statement detection
-   - DROP/CREATE TABLE statement detection
-   - SQL comment detection, etc.
+   - UNION SELECT statement detection (`sql-union-select`)
+   - EXEC/EXECUTE statement detection (`sql-exec`)
+   - DROP TABLE statement detection (`sql-drop-table`)
+   - CREATE TABLE statement detection (`sql-create-table`)
+   - INSERT INTO statement detection (`sql-insert-into`)
+   - UPDATE SET statement detection (`sql-update-set`)
+   - DELETE FROM statement detection (`sql-delete-from`)
+   - SQL comment detection (`sql-comment`)
+   - Sleep function detection (`sql-sleep`)
+   - Benchmark function detection (`sql-benchmark`)
+   - Backtick injection detection (`sql-backtick-injection`)
+   - Hexadecimal injection detection (`sql-hex-injection`)
+   - CHAR function injection (`sql-char-injection`)
+   - NVARCHAR cast detection (`sql-nvarchar-cast`)
 
-3. **Other Attack Protection**
-   - Code execution detection
-   - File operation detection
-   - SSRF (Server-Side Request Forgery) detection, etc.
+3. **Code Execution Protection**
+   - Eval/Timeout functions detection (`eval-js`)
+   - System command functions detection (`system-command`)
+   - Reflection invoke detection (`reflection-invoke`)
+
+4. **File Operation Protection**
+   - File operation functions detection (`file-operation`)
+
+5. **SSRF (Server-Side Request Forgery) Protection**
+   - URL connection classes detection (`ssrf-url-connection`)
+   - Curl/Wget command detection (`ssrf-curl`)
+   - File protocol access detection (`ssrf-file-protocol`)
+
+6. **Command Injection Protection**
+   - Pipe and special characters detection (`command-injection-pipe`)
+   - Shell command keywords detection (`command-injection-shell-keywords`)
+
+7. **Path Traversal Protection**
+   - Path traversal detection (`path-traversal`)
+   - Encoded path traversal detection (`path-traversal-encoded`)
+
+8. **LDAP Injection Protection**
+   - LDAP injection detection (`ldap-injection`)
+
+9. **XXE (XML External Entity) Injection Protection**
+   - XML entity declaration detection (`xxe-entity`)
+   - XML doctype declaration detection (`xxe-doctype`)
 
 ## Custom Rules
 

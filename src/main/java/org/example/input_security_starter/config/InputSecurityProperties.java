@@ -20,9 +20,8 @@ public class InputSecurityProperties {
 
     public List<SecurityRule> getRules() {
         if (rules.isEmpty()) {
-            // 提供默认规则（fallback）
             
-            // XSS 攻击规则 - 更全面的防护
+            // XSS 攻击规则
             rules.add(createRule(
                     "xss-script-tag",
                     "(?i)(<\\s*script[^>]*>|</\\s*script\\s*>)",
@@ -98,6 +97,26 @@ public class InputSecurityProperties {
                     "(?i)<\\s*form[^>]+action\\s*=\\s*['\"]?\\s*javascript:",
                     "high",
                     true));
+            rules.add(createRule(
+                    "xss-style-tag",
+                    "(?i)<\\s*style[^>]*>.*expression\\s*\\(",
+                    "high",
+                    true));
+            rules.add(createRule(
+                    "xss-link-tag",
+                    "(?i)<\\s*link[^>]*rel\\s*=\\s*['\"]?stylesheet['\"]?[^>]*href\\s*=\\s*['\"]?javascript:",
+                    "high",
+                    true));
+            rules.add(createRule(
+                    "xss-body-tag",
+                    "(?i)<\\s*body[^>]*onload\\s*=",
+                    "high",
+                    true));
+            rules.add(createRule(
+                    "xss-background-prop",
+                    "(?i)background-image\\s*:.*url\\s*\\(",
+                    "medium",
+                    true));
             
             // SQL 注入规则
             rules.add(createRule(
@@ -150,6 +169,26 @@ public class InputSecurityProperties {
                     "(?i)benchmark\\s*\\(",
                     "high",
                     true));
+            rules.add(createRule(
+                    "sql-backtick-injection",
+                    "(?i)`[^`]*('|\\\")[^`]*`",
+                    "high",
+                    true));
+            rules.add(createRule(
+                    "sql-hex-injection",
+                    "(?i)0x[0-9a-fA-F]+",
+                    "medium",
+                    true));
+            rules.add(createRule(
+                    "sql-char-injection",
+                    "(?i)char\\s*\\([^)]*\\)",
+                    "medium",
+                    true));
+            rules.add(createRule(
+                    "sql-nvarchar-cast",
+                    "(?i)cast\\s*\\([^)]*\\s+as\\s+nvarchar",
+                    "high",
+                    true));
             
             // 代码执行规则
             rules.add(createRule(
@@ -181,7 +220,59 @@ public class InputSecurityProperties {
                     "(?i)URLConnection|HttpClient",
                     "medium",
                     true));
+            rules.add(createRule(
+                    "ssrf-curl",
+                    "(?i)\\b(curl|wget)\\s+",
+                    "high",
+                    true));
+            rules.add(createRule(
+                    "ssrf-file-protocol",
+                    "(?i)file://|[\\\\./]*(etc|windows|winnt)[\\\\./]+passwd",
+                    "high",
+                    true));
                     
+            // 命令注入规则
+            rules.add(createRule(
+                    "command-injection-pipe",
+                    "(?i)[|&;`\\n\\r\\t]",
+                    "high",
+                    true));
+            rules.add(createRule(
+                    "command-injection-shell-keywords",
+                    "(?i)\\b(cd|dir|ls|cat|cp|mv|rm|ps|kill|ifconfig|ipconfig)\\b",
+                    "medium",
+                    true));
+                    
+            // 路径遍历规则
+            rules.add(createRule(
+                    "path-traversal",
+                    "(?i)(\\.\\.[/\\\\])|(\\.\\.[/\\\\])|(\\.\\.[/\\\\])",
+                    "high",
+                    true));
+            rules.add(createRule(
+                    "path-traversal-encoded",
+                    "(?i)(%2e|%2e%2e|%c0%ae|%uff0e|%uff0e%uff0e)",
+                    "high",
+                    true));
+                    
+            // LDAP注入规则
+            rules.add(createRule(
+                    "ldap-injection",
+                    "(?i)[\\n\\r\\t]*\\*.*[\\n\\r\\t]*\\)|[\\n\\r\\t]*\\(|[\\n\\r\\t]+or[\\n\\r\\t]+|[\\n\\r\\t]+and[\\n\\r\\t]+",
+                    "medium",
+                    true));
+                    
+            // XXE注入规则
+            rules.add(createRule(
+                    "xxe-entity",
+                    "(?i)<!entity\\s",
+                    "high",
+                    true));
+            rules.add(createRule(
+                    "xxe-doctype",
+                    "(?i)<!doctype\\s",
+                    "medium",
+                    true));
         }
         return new ArrayList<>(rules); // 返回副本以防止外部修改
     }
