@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>安全事件记录</title>
+    <!-- 引入 ECharts -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .chart-container {
+            width: 100%;
+            height: 400px;
+            margin: 20px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        .chart-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        .charts-row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .chart-box {
+            flex: 1;
+            min-width: 0;
+        }
+        .chart-box .chart-container {
+            height: 350px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            table-layout: fixed;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        /* 输入内容列样式 */
+        td:nth-child(2) {
+            max-width: 400px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            position: relative;
+        }
+        /* 鼠标悬停时显示完整内容 */
+        td:nth-child(2):hover {
+            white-space: normal;
+            overflow: visible;
+            background-color: #fff3cd;
+            z-index: 10;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        /* 时间戳列固定宽度 */
+        td:nth-child(1), th:nth-child(1) {
+            width: 180px;
+        }
+        /* 匹配规则列固定宽度 */
+        td:nth-child(3), th:nth-child(3) {
+            width: 150px;
+        }
+        /* 操作列固定宽度 */
+        td:nth-child(4), th:nth-child(4) {
+            width: 80px;
+        }
+        /* IP地址列固定宽度 */
+        td:nth-child(5), th:nth-child(5) {
+            width: 120px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            margin-right: 10px;
+        }
+        input[type="number"] {
+            padding: 5px;
+            width: 80px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .back-link {
+            margin-bottom: 20px;
+        }
+        .back-link a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        .back-link a:hover {
+            text-decoration: underline;
+        }
+        .mode-info {
+            background-color: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .stats-summary {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .stats-summary h3 {
+            margin-top: 0;
+        }
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="back-link">
+        <a th:href="@{/input-security-view/test}">← 返回输入测试</a>
+    </div>
+    
+    <h1>安全事件记录</h1>
+    
+    <div class="mode-info">
+        当前工作模式: <span th:text="${mode}"></span>
+    </div>
+    
+    <!-- 统计图表区域 -->
+    <div class="stats-summary">
+        <h3>攻击统计图表</h3>
+        
+        <!-- 攻击类型分布饼图 -->
+        <div class="chart-box">
+            <div class="chart-title">攻击类型分布</div>
+            <div id="pieChart" class="chart-container">
+                <div class="loading">加载中...</div>
+            </div>
+        </div>
+        
+        <!-- 攻击趋势堆叠条形图 -->
+        <div class="chart-box">
+            <div class="chart-title">攻击类型随时间变化趋势（最近24小时）</div>
+            <div id="trendChart" class="chart-container">
+                <div class="loading">加载中...</div>
+            </div>
+        </div>
+    </div>
+    
+    <form action="#" th:action="@{/input-security-view/events}" method="get">
+        <div class="form-group">
+            <label for="limit">显示最近记录数:</label>
+            <input type="number" id="limit" name="limit" th:value="${limit}" min="1" max="1000">
+            <button type="submit">更新</button>
+            <button type="button" onclick="refreshCharts()">刷新图表</button>
+        </div>
+    </form>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>时间戳</th>
+                <th>输入内容</th>
+                <th>匹配规则</th>
+                <th>操作</th>
+                <th>IP地址</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr th:each="event : ${events}">
+                <td th:text="${event.formattedTimestamp}"></td>
+                <td th:text="${event.inputSnippet}"></td>
+                <td th:text="${event.ruleName ?: '无'}"></td>
+                <td th:text="${mode == 'block' and event.ruleName != null ? '阻止' : '允许'}"></td>
+                <td th:text="${event.ipAddress ?: '未知'}"></td>
+            </tr>
+            <tr th:if="${events.empty}">
+                <td colspan="5" style="text-align: center;">没有找到安全事件记录</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <script>
+        // 初始化图表
+        let pieChart = null;
+        let trendChart = null;
+
+        // 页面加载完成后初始化图表
+        document.addEventListener('DOMContentLoaded', function() {
+            initCharts();
+            loadChartData();
+        });
+
+        // 初始化图表实例
+        function initCharts() {
+            pieChart = echarts.init(document.getElementById('pieChart'));
+            trendChart = echarts.init(document.getElementById('trendChart'));
+            
+            // 窗口大小改变时重新调整图表大小
+            window.addEventListener('resize', function() {
+                pieChart.resize();
+                trendChart.resize();
+            });
+        }
+
+        // 加载图表数据
+        function loadChartData() {
+            fetch('/input-security-api/stats?lastNHours=24')
+                .then(response => response.json())
+                .then(data => {
+                    renderPieChart(data.typeDistribution);
+                    renderTrendChart(data.trend);
+                })
+                .catch(error => {
+                    console.error('加载图表数据失败:', error);
+                    document.getElementById('pieChart').innerHTML = '<div class="loading">加载失败，请刷新重试</div>';
+                    document.getElementById('trendChart').innerHTML = '<div class="loading">加载失败，请刷新重试</div>';
+                });
+        }
+
+        // 渲染饼图
+        function renderPieChart(data) {
+            if (!data || data.length === 0) {
+                document.getElementById('pieChart').innerHTML = '<div class="loading">暂无数据</div>';
+                return;
+            }
+
+            const option = {
+                tooltip: {
+                    trigger: 'item',
+                    formatter: '{a} <br/>{b}: {c} ({d}%)'
+                },
+                legend: {
+                    orient: 'vertical',
+                    left: 'left',
+                    type: 'scroll'
+                },
+                series: [
+                    {
+                        name: '攻击类型',
+                        type: 'pie',
+                        radius: ['40%', '70%'],
+                        avoidLabelOverlap: false,
+                        itemStyle: {
+                            borderRadius: 10,
+                            borderColor: '#fff',
+                            borderWidth: 2
+                        },
+                        label: {
+                            show: true,
+                            formatter: '{b}: {c}'
+                        },
+                        emphasis: {
+                            label: {
+                                show: true,
+                                fontSize: 16,
+                                fontWeight: 'bold'
+                            }
+                        },
+                        data: data
+                    }
+                ]
+            };
+
+            pieChart.setOption(option);
+        }
+
+        // 渲染趋势条形图
+        function renderTrendChart(data) {
+            if (!data || !data.series || data.series.length === 0) {
+                document.getElementById('trendChart').innerHTML = '<div class="loading">暂无数据</div>';
+                return;
+            }
+
+            const option = {
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: {
+                        type: 'shadow'
+                    }
+                },
+                legend: {
+                    type: 'scroll',
+                    top: 0
+                },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '3%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    data: data.timeAxis,
+                    axisLabel: {
+                        rotate: 45,
+                        fontSize: 10
+                    }
+                },
+                yAxis: {
+                    type: 'value',
+                    name: '攻击次数'
+                },
+                series: data.series.map(s => ({
+                    name: s.name,
+                    type: 'bar',
+                    stack: 'total',
+                    emphasis: {
+                        focus: 'series'
+                    },
+                    data: s.data
+                }))
+            };
+
+            trendChart.setOption(option);
+        }
+
+        // 刷新图表
+        function refreshCharts() {
+            pieChart.showLoading();
+            trendChart.showLoading();
+            loadChartData();
+            pieChart.hideLoading();
+            trendChart.hideLoading();
+        }
+    </script>
+</body>
+</html>

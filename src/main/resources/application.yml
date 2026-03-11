@@ -1,0 +1,87 @@
+input-security:
+  enabled: true
+  mode: monitor
+  
+  exclude-paths:
+    - /favicon.ico
+    - /static/**
+    - /resources/**
+    - /public/**
+    - /css/**
+    - /js/**
+    - /images/**
+    - /lib/**
+    - /webjars/**
+
+  log-file-path: security-events.log
+  max-log-size-mb: 50
+  max-log-files: 10
+  async-log-enabled: true
+
+  filter-order: -100
+  enable-ui: true
+  
+  attack-chain:
+    enabled: true
+    max-sessions: 10000
+    session-timeout-minutes: 30
+    max-events-per-session: 20
+    alert-threshold: 80
+    min-phases-for-chain: 3
+    alert-log-path: attack-chain-alerts.log
+
+  llm:
+    enabled: true
+    provider: glm
+    max-alerts-per-analysis: 50
+    analysis-timeout-ms: 90000
+    max-prompt-chars: 24000
+    max-ips-per-analysis: 50
+    max-events-per-ip: 50
+    abuse-ip-db-api-key: "${ABUSEIPDB_API_KEY:}"
+    abuse-ip-db-api-url: "https://api.abuseipdb.com/api/v2/check"
+    abuse-ip-db-max-age-days: 90
+    ip-log-dir: "."
+    
+    advanced:
+      connect-timeout-ms: 30000
+      read-timeout-ms: 300000
+      max-retries: 2
+      retry-base-delay-ms: 500
+      retry-max-delay-ms: 8000
+      circuit-failure-threshold: 5
+      circuit-open-window-ms: 60000
+      requests-per-minute: 60
+    
+    glm:
+      api-url: "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+      api-key: "${GLM_API_KEY:}"
+      model: glm-4-flash
+    
+    aliyun-bailian:
+      api-url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+      api-key: "${ALIYUN_BAILIAN_API_KEY:}"
+      model: qwen-plus
+    
+    auto-analysis:
+      enabled: true
+      alert-threshold: 50
+      count-check-interval-ms: 60000
+      schedule-cron: "0 0 2 * * ?"
+      schedule-interval-hours: 24
+    
+    feishu:
+      enabled: true
+      webhook-url: "https://open.feishu.cn/open-apis/im/v1/messages"
+      app-id: "${FEISHU_APP_ID:}"
+      app-secret: "${FEISHU_APP_SECRET:}"
+      receive-id-type: "${FEISHU_RECEIVE_ID_TYPE:chat_id}"
+      receive-id: "${FEISHU_RECEIVE_ID:}"
+  
+
+spring:
+  application:
+    name: Input Security SDK
+
+server:
+  port: 9090

@@ -1,0 +1,1 @@
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=org.example.input_security_starter.autoconfigure.InputSecurityAutoConfiguration

@@ -1,0 +1,21 @@
+# source|value
+query|how to configure spring boot logging
+query|please select one option from the list
+query|the union of two data sets is displayed in chart
+query|john and mary are members of the same group
+header|Mozilla/5.0 AppleWebKit/537.36 Chrome/122.0 Safari/537.36
+header|application/json
+param|email=alex.johnson@example.com
+param|city=shanghai
+param|price=19.99
+param|bio=I like open source and distributed systems
+param|redirect=/docs/getting-started
+param|template syntax uses ${name} in docs
+body|{"message":"please send the report by 2026-03-10"}
+body|{"keyword":"select all rows in spreadsheet"}
+body|{"notes":"A | B | C are pipeline stages in dashboard"}
+body|<note><title>project update</title><text>weekly summary</text></note>
+cookie|session_id=abc123xyz
+cookie|theme=light
+path|/api/orders/list
+path|/product/catalog/search

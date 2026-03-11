@@ -1,0 +1,11 @@
+# source|value
+param|content=This article talks about script tags as plain text
+param|query=users can select one or more values
+param|note=the command line symbol | is used in markdown examples
+param|template=price is ${price} and tax is ${tax}
+param|math=1 and 2 are prime numbers in this paragraph
+param|path=../docs/reference is a relative path in documentation
+body|{"text":"Use UNION in set theory context only"}
+body|{"text":"Never run rm -rf in production docs"}
+body|{"text":"The string <script> appears as escaped docs token"}
+header|Referer: https://example.com/docs/command-injection-guide

@@ -1,0 +1,13 @@
+# source|value
+param|<script>alert('xss')</script>
+param|<img src=x onerror=alert(1)>
+param|1 UNION SELECT username,password FROM users
+param|' OR '1'='1' --
+param|; cat /etc/passwd
+param|$(whoami)
+param|../../../etc/passwd
+param|http://169.254.169.254/latest/meta-data/
+param|http://0x7f000001/admin
+param|file:///etc/shadow
+body|{"q":"<svg onload=alert(1)>"}
+body|{"q":"exec xp_cmdshell('dir')"}
