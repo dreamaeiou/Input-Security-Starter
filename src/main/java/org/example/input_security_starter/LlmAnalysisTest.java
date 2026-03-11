@@ -13,6 +13,8 @@ import org.example.input_security_starter.llm.provider.glm.GlmConfig;
 import org.example.input_security_starter.llm.provider.glm.GlmProvider;
 import org.example.input_security_starter.notification.FeishuClient;
 import org.example.input_security_starter.notification.FeishuNotifier;
+import org.example.input_security_starter.notification.WeComClient;
+import org.example.input_security_starter.notification.WeComNotifier;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -42,6 +44,14 @@ public class LlmAnalysisTest {
         String feishuAppSecret = getEnvOrDefault("FEISHU_APP_SECRET", "");
         String feishuReceiveIdType = getEnvOrDefault("FEISHU_RECEIVE_ID_TYPE", "user_id");
         String feishuReceiveId = getEnvOrDefault("FEISHU_RECEIVE_ID", "");
+        
+        String wecomWebhookUrl = getEnvOrDefault("WECOM_WEBHOOK_URL", "");
+        String wecomCorpId = getEnvOrDefault("WECOM_CORP_ID", "");
+        String wecomCorpSecret = getEnvOrDefault("WECOM_CORP_SECRET", "");
+        String wecomAgentId = getEnvOrDefault("WECOM_AGENT_ID", "");
+        String wecomToUser = getEnvOrDefault("WECOM_TO_USER", "@all");
+        String wecomToParty = getEnvOrDefault("WECOM_TO_PARTY", "");
+        String wecomToTag = getEnvOrDefault("WECOM_TO_TAG", "");
 
         String apiKey;
         String model;
@@ -74,10 +84,19 @@ public class LlmAnalysisTest {
                 System.err.println("  - ALIYUN_BAILIAN_MODEL: 模型名称 (可选，默认 qwen-plus)");
                 System.err.println("\n可选环境变量：");
                 System.err.println("  - ABUSEIPDB_API_KEY: AbuseIPDB API Key");
+                System.err.println("\n飞书通知：");
                 System.err.println("  - FEISHU_APP_ID: 飞书应用 ID");
                 System.err.println("  - FEISHU_APP_SECRET: 飞书应用密钥");
                 System.err.println("  - FEISHU_RECEIVE_ID_TYPE: 飞书接收者类型 (默认 user_id)");
                 System.err.println("  - FEISHU_RECEIVE_ID: 飞书接收者 ID");
+                System.err.println("\n企业微信通知：");
+                System.err.println("  - WECOM_WEBHOOK_URL: 企业微信群机器人 Webhook URL");
+                System.err.println("  - WECOM_CORP_ID: 企业微信企业 ID (应用API模式)");
+                System.err.println("  - WECOM_CORP_SECRET: 企业微信应用密钥 (应用API模式)");
+                System.err.println("  - WECOM_AGENT_ID: 企业微信应用 ID (应用API模式)");
+                System.err.println("  - WECOM_TO_USER: 接收用户ID (默认 @all)");
+                System.err.println("  - WECOM_TO_PARTY: 接收部门ID");
+                System.err.println("  - WECOM_TO_TAG: 接收标签ID");
                 return;
             }
         }
@@ -206,15 +225,58 @@ public class LlmAnalysisTest {
         );
         FeishuNotifier feishuNotifier = new FeishuNotifier(feishuClient);
         System.out.println("  ✓ 飞书客户端初始化完成");
-        System.out.println("  App ID: " + feishuAppId);
+        System.out.println("  App ID: " + (feishuAppId.isEmpty() ? "未配置" : feishuAppId));
         System.out.println("  接收类型: " + feishuReceiveIdType);
-        System.out.println("  接收ID: " + feishuReceiveId);
+        System.out.println("  接收ID: " + (feishuReceiveId.isEmpty() ? "未配置" : feishuReceiveId));
         
-        System.out.println("\n【步骤9】初始化 LLM 分析服务...");
-        LlmAnalysisService service = new LlmAnalysisService(llmProvider, abuseIpDbClient, ipQueryService, alertLogPath, 50, feishuNotifier);
+        System.out.println("\n【步骤9】初始化企业微信通知客户端...");
+        boolean wecomUseAppApi = !wecomCorpId.isEmpty() && !wecomCorpSecret.isEmpty() && !wecomAgentId.isEmpty();
+        WeComClient weComClient = new WeComClient(
+            wecomWebhookUrl,
+            wecomCorpId,
+            wecomCorpSecret,
+            wecomAgentId,
+            wecomToUser,
+            wecomToParty,
+            wecomToTag,
+            true
+        );
+        WeComNotifier weComNotifier = new WeComNotifier(weComClient);
+        System.out.println("  ✓ 企业微信客户端初始化完成");
+        System.out.println("  客户端启用状态: " + weComClient.isEnabled());
+        System.out.println("  使用应用API模式: " + weComClient.isUseAppApi());
+        if (wecomUseAppApi) {
+            System.out.println("  模式: 应用API");
+            System.out.println("  企业ID: " + wecomCorpId);
+            System.out.println("  应用ID: " + wecomAgentId);
+            System.out.println("  接收用户: " + wecomToUser);
+        } else if (!wecomWebhookUrl.isEmpty()) {
+            System.out.println("  模式: 群机器人Webhook");
+            System.out.println("  Webhook: " + wecomWebhookUrl.substring(0, Math.min(50, wecomWebhookUrl.length())) + "...");
+        } else {
+            System.out.println("  模式: 未配置");
+        }
+        
+        if (weComClient.isEnabled()) {
+            System.out.println("\n【步骤9.1】测试企业微信连接...");
+            boolean wecomTestResult = weComClient.testConnection();
+            System.out.println("  企业微信连接测试: " + (wecomTestResult ? "成功" : "失败"));
+        }
+        
+        System.out.println("\n【步骤10】初始化 LLM 分析服务...");
+        LlmAnalysisService service = new LlmAnalysisService(
+            llmProvider, 
+            abuseIpDbClient, 
+            ipQueryService, 
+            alertLogPath, 
+            50, 
+            24000,
+            feishuNotifier,
+            weComNotifier
+        );
         System.out.println("  ✓ LlmAnalysisService 初始化完成");
 
-        System.out.println("\n【步骤10】开始 LLM 分析 (" + provider + ")...");
+        System.out.println("\n【步骤11】开始 LLM 分析 (" + provider + ")...");
         System.out.println("  (这可能需要几秒钟时间...)\n");
 
         long startTime = System.currentTimeMillis();
@@ -230,11 +292,16 @@ public class LlmAnalysisTest {
         System.out.println("  ✓ 分析完成!");
         System.out.println("  耗时：" + (endTime - startTime) + " ms");
         
-        System.out.println("\n【步骤11】检查飞书通知状态...");
+        System.out.println("\n【步骤12】检查通知状态...");
         if (feishuNotifier.isEnabled()) {
-            System.out.println("  ✓ 飞书通知已自动发送（在分析过程中自动触发）");
+            System.out.println("  ✓ 飞书通知已自动发送");
         } else {
             System.out.println("  ⚠ 飞书通知未启用");
+        }
+        if (weComNotifier.isEnabled()) {
+            System.out.println("  ✓ 企业微信通知已自动发送");
+        } else {
+            System.out.println("  ⚠ 企业微信通知未启用");
         }
 
         System.out.println("\n╔════════════════════════════════════════════════════════════════╗");
@@ -270,7 +337,7 @@ public class LlmAnalysisTest {
         System.out.println("\n--- 完整分析报告 ---");
         System.out.println(report.getAttackNarrative());
 
-        System.out.println("\n【步骤12】检查IP索引状态...");
+        System.out.println("\n【步骤13】检查IP索引状态...");
         System.out.println("  索引条目数: " + ipQueryService.getIndexSize());
         
         File indexFile = new File(ipLogDir, "ip_index.json");
@@ -278,7 +345,7 @@ public class LlmAnalysisTest {
             System.out.println("  索引文件: " + indexFile.getAbsolutePath() + " (" + indexFile.length() + " bytes)");
         }
 
-        System.out.println("\n【步骤13】关闭服务...");
+        System.out.println("\n【步骤14】关闭服务...");
         ipQueryService.shutdown();
         System.out.println("  ✓ IpQueryService 已关闭");
 

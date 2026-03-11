@@ -77,6 +77,16 @@ input-security:
       app-secret: "${FEISHU_APP_SECRET:}"
       receive-id-type: "${FEISHU_RECEIVE_ID_TYPE:chat_id}"
       receive-id: "${FEISHU_RECEIVE_ID:}"
+    
+    wecom:
+      enabled: false
+      webhook-url: "${WECOM_WEBHOOK_URL:}"
+      corp-id: "${WECOM_CORP_ID:}"
+      corp-secret: "${WECOM_CORP_SECRET:}"
+      agent-id: "${WECOM_AGENT_ID:}"
+      to-user: "${WECOM_TO_USER:@all}"
+      to-party: "${WECOM_TO_PARTY:}"
+      to-tag: "${WECOM_TO_TAG:}"
   
 
 spring:

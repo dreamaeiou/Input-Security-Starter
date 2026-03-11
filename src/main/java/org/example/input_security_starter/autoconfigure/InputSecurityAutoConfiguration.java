@@ -18,6 +18,8 @@ import org.example.input_security_starter.llm.schedule.AlertCounter;
 import org.example.input_security_starter.llm.schedule.ScheduledAnalysisTask;
 import org.example.input_security_starter.notification.FeishuClient;
 import org.example.input_security_starter.notification.FeishuNotifier;
+import org.example.input_security_starter.notification.WeComClient;
+import org.example.input_security_starter.notification.WeComNotifier;
 import org.example.input_security_starter.tracker.AttackChainAlert;
 import org.example.input_security_starter.tracker.AttackChainTracker;
 import org.example.input_security_starter.web.InputSecurityController;
@@ -119,9 +121,10 @@ public class InputSecurityAutoConfiguration {
             @org.springframework.beans.factory.annotation.Autowired(required = false) LlmAnalysisService llmAnalysisService,
             @org.springframework.beans.factory.annotation.Autowired(required = false) ScheduledAnalysisTask scheduledAnalysisTask,
             @org.springframework.beans.factory.annotation.Autowired(required = false) AlertCounter alertCounter,
-            @org.springframework.beans.factory.annotation.Autowired(required = false) FeishuNotifier feishuNotifier) {
+            @org.springframework.beans.factory.annotation.Autowired(required = false) FeishuNotifier feishuNotifier,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) WeComNotifier weComNotifier) {
         log.info("Creating InputSecurityController (enable-ui=true)");
-        return new InputSecurityController(ruleEngine, eventRecorder, llmAnalysisService, scheduledAnalysisTask, alertCounter, feishuNotifier);
+        return new InputSecurityController(ruleEngine, eventRecorder, llmAnalysisService, scheduledAnalysisTask, alertCounter, feishuNotifier, weComNotifier);
     }
 
     @Bean
@@ -221,7 +224,8 @@ public class InputSecurityAutoConfiguration {
             AbuseIpDbClient abuseIpDbClient,
             IpQueryService ipQueryService,
             InputSecurityProperties properties,
-            @org.springframework.beans.factory.annotation.Autowired(required = false) FeishuNotifier feishuNotifier) {
+            @org.springframework.beans.factory.annotation.Autowired(required = false) FeishuNotifier feishuNotifier,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) WeComNotifier weComNotifier) {
         String alertLogPath = properties.getAttackChain().getAlertLogPath();
         InputSecurityProperties.LlmConfig llmConfig = properties.getLlm();
         LlmAnalysisService service = new LlmAnalysisService(
@@ -234,7 +238,8 @@ public class InputSecurityAutoConfiguration {
             llmConfig.getMaxIpsPerAnalysis(),
             llmConfig.getMaxEventsPerIp(),
             llmConfig.getAnalysisTimeoutMs(),
-            feishuNotifier
+            feishuNotifier,
+            weComNotifier
         );
         log.info("LlmAnalysisService created with provider: {}, monitoring alert log: {}", llmProvider.getName(), alertLogPath);
         return service;
@@ -265,6 +270,32 @@ public class InputSecurityAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnProperty(prefix = "input-security.llm.wecom", name = "enabled", havingValue = "true")
+    public WeComClient weComClient(InputSecurityProperties properties) {
+        InputSecurityProperties.WeComConfig config = properties.getLlm().getWecom();
+        WeComClient client = new WeComClient(
+            config.getWebhookUrl(),
+            config.getCorpId(),
+            config.getCorpSecret(),
+            config.getAgentId(),
+            config.getToUser(),
+            config.getToParty(),
+            config.getToTag(),
+            config.isEnabled()
+        );
+        log.info("WeComClient created: enabled={}, useAppApi={}", config.isEnabled(), client.isUseAppApi());
+        return client;
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "input-security.llm.wecom", name = "enabled", havingValue = "true")
+    public WeComNotifier weComNotifier(WeComClient weComClient) {
+        WeComNotifier notifier = new WeComNotifier(weComClient);
+        log.info("WeComNotifier created");
+        return notifier;
+    }
+
+    @Bean
     @ConditionalOnProperty(prefix = "input-security.llm.auto-analysis", name = "enabled", havingValue = "true")
     public AlertCounter alertCounter(InputSecurityProperties properties) {
         String alertLogPath = properties.getAttackChain().getAlertLogPath();
@@ -280,7 +311,8 @@ public class InputSecurityAutoConfiguration {
             LlmAnalysisService llmAnalysisService,
             AlertCounter alertCounter,
             InputSecurityProperties properties,
-            @org.springframework.beans.factory.annotation.Autowired(required = false) FeishuNotifier feishuNotifier) {
+            @org.springframework.beans.factory.annotation.Autowired(required = false) FeishuNotifier feishuNotifier,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) WeComNotifier weComNotifier) {
         
         InputSecurityProperties.AutoAnalysisConfig config = properties.getLlm().getAutoAnalysis();
         
@@ -290,7 +322,8 @@ public class InputSecurityAutoConfiguration {
             config.isEnabled(),
             config.getScheduleIntervalMs(),
             config.getScheduleCron(),
-            feishuNotifier
+            feishuNotifier,
+            weComNotifier
         );
         
         log.info("ScheduledAnalysisTask created: enabled={}, threshold={}, intervalHours={}, cron={}, countCheckIntervalMs={}",

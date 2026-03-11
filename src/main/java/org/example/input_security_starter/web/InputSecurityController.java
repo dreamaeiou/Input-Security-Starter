@@ -8,6 +8,7 @@ import org.example.input_security_starter.llm.analysis.LlmAnalysisService;
 import org.example.input_security_starter.llm.schedule.AlertCounter;
 import org.example.input_security_starter.llm.schedule.ScheduledAnalysisTask;
 import org.example.input_security_starter.notification.FeishuNotifier;
+import org.example.input_security_starter.notification.WeComNotifier;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,18 +34,21 @@ public class InputSecurityController {
     private final ScheduledAnalysisTask scheduledAnalysisTask;
     private final AlertCounter alertCounter;
     private final FeishuNotifier feishuNotifier;
+    private final WeComNotifier weComNotifier;
 
     public InputSecurityController(OptimizedRuleEngine ruleEngine, EventRecorder eventRecorder,
                                    @Autowired(required = false) LlmAnalysisService llmAnalysisService,
                                    @Autowired(required = false) ScheduledAnalysisTask scheduledAnalysisTask,
                                    @Autowired(required = false) AlertCounter alertCounter,
-                                   @Autowired(required = false) FeishuNotifier feishuNotifier) {
+                                   @Autowired(required = false) FeishuNotifier feishuNotifier,
+                                   @Autowired(required = false) WeComNotifier weComNotifier) {
         this.ruleEngine = ruleEngine;
         this.eventRecorder = eventRecorder;
         this.llmAnalysisService = llmAnalysisService;
         this.scheduledAnalysisTask = scheduledAnalysisTask;
         this.alertCounter = alertCounter;
         this.feishuNotifier = feishuNotifier;
+        this.weComNotifier = weComNotifier;
     }
 
     @GetMapping("/test")
@@ -300,6 +304,28 @@ public class InputSecurityController {
         } catch (Exception e) {
             result.put("success", false);
             result.put("message", "Feishu notification test failed: " + e.getMessage());
+        }
+
+        return result;
+    }
+
+    @PostMapping("/wecom/test")
+    public Map<String, Object> testWeComNotification() {
+        Map<String, Object> result = new HashMap<>();
+
+        if (weComNotifier == null) {
+            result.put("success", false);
+            result.put("message", "WeCom notification is not enabled. Set input-security.llm.wecom.enabled=true to enable.");
+            return result;
+        }
+
+        try {
+            boolean success = weComNotifier.testNotification();
+            result.put("success", success);
+            result.put("message", success ? "WeCom notification test successful." : "WeCom notification test failed.");
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "WeCom notification test failed: " + e.getMessage());
         }
 
         return result;

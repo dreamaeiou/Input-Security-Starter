@@ -3,6 +3,7 @@ package org.example.input_security_starter.llm.schedule;
 import org.example.input_security_starter.llm.analysis.AnalysisReport;
 import org.example.input_security_starter.llm.analysis.LlmAnalysisService;
 import org.example.input_security_starter.notification.FeishuNotifier;
+import org.example.input_security_starter.notification.WeComNotifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -19,6 +20,7 @@ public class ScheduledAnalysisTask {
     private final long scheduleIntervalMs;
     private final String scheduleCron;
     private final FeishuNotifier feishuNotifier;
+    private final WeComNotifier weComNotifier;
 
     private final AtomicBoolean analysisInProgress = new AtomicBoolean(false);
 
@@ -26,7 +28,7 @@ public class ScheduledAnalysisTask {
                                   AlertCounter alertCounter,
                                   boolean enabled,
                                   long scheduleIntervalMs) {
-        this(llmAnalysisService, alertCounter, enabled, scheduleIntervalMs, null, null);
+        this(llmAnalysisService, alertCounter, enabled, scheduleIntervalMs, null, null, null);
     }
 
     public ScheduledAnalysisTask(LlmAnalysisService llmAnalysisService,
@@ -35,12 +37,23 @@ public class ScheduledAnalysisTask {
                                   long scheduleIntervalMs,
                                   String scheduleCron,
                                   FeishuNotifier feishuNotifier) {
+        this(llmAnalysisService, alertCounter, enabled, scheduleIntervalMs, scheduleCron, feishuNotifier, null);
+    }
+
+    public ScheduledAnalysisTask(LlmAnalysisService llmAnalysisService,
+                                  AlertCounter alertCounter,
+                                  boolean enabled,
+                                  long scheduleIntervalMs,
+                                  String scheduleCron,
+                                  FeishuNotifier feishuNotifier,
+                                  WeComNotifier weComNotifier) {
         this.llmAnalysisService = llmAnalysisService;
         this.alertCounter = alertCounter;
         this.enabled = enabled;
         this.scheduleIntervalMs = scheduleIntervalMs;
         this.scheduleCron = scheduleCron;
         this.feishuNotifier = feishuNotifier;
+        this.weComNotifier = weComNotifier;
         
         log.info("ScheduledAnalysisTask initialized: enabled={}, intervalMs={}, cron={}",
                 enabled, scheduleIntervalMs, scheduleCron);
@@ -135,13 +148,22 @@ public class ScheduledAnalysisTask {
     }
 
     private void sendFeishuAfterTriggeredAnalysis(AnalysisReport report) {
-        if (report == null || feishuNotifier == null || !feishuNotifier.isEnabled()) {
+        if (report == null) {
             return;
         }
-        try {
-            feishuNotifier.notifyAnalysisComplete(report);
-        } catch (Exception e) {
-            log.error("Failed to send Feishu notification after triggered analysis: {}", e.getMessage(), e);
+        if (feishuNotifier != null && feishuNotifier.isEnabled()) {
+            try {
+                feishuNotifier.notifyAnalysisComplete(report);
+            } catch (Exception e) {
+                log.error("Failed to send Feishu notification after triggered analysis: {}", e.getMessage(), e);
+            }
+        }
+        if (weComNotifier != null && weComNotifier.isEnabled()) {
+            try {
+                weComNotifier.notifyAnalysisComplete(report);
+            } catch (Exception e) {
+                log.error("Failed to send WeCom notification after triggered analysis: {}", e.getMessage(), e);
+            }
         }
     }
 

@@ -19,7 +19,7 @@ Input Security Starter perfectly combines traditional **WAF rule engine** with m
 
 - 🌍 **Threat Intelligence Enhancement**: Async integration with **AbuseIPDB** to automatically identify global malicious IPs, botnets, and Tor nodes.
 
-- 📱 **Feishu Real-time Notification**: Integrated with **Feishu Open Platform**, automatically pushes interactive card messages to group chats or private chats after LLM analysis completes.
+- 📱 **Multi-Platform Notification**: Integrated with **Feishu** and **WeCom (企业微信)**, automatically pushes interactive card messages to group chats or private chats after LLM analysis completes.
 
 - 🚀 **Production-Grade Performance**: Async logging, memory circuit breaker protection, sliding window mechanism - zero business latency.
 
@@ -191,6 +191,17 @@ input-security:
       app-secret: ""              # Feishu App Secret
       receive-id-type: "chat_id"  # Receiver type: chat_id(group), user_id(private), email
       receive-id: ""              # Receiver ID (group ID or user ID)
+    
+    # WeCom (企业微信) Notification
+    wecom:
+      enabled: false              # Enable WeCom notification
+      webhook-url: ""             # Webhook URL for group bot (simple)
+      corp-id: ""                 # Corporate ID (for App API)
+      corp-secret: ""             # Corporate Secret (for App API)
+      agent-id: ""                # Agent ID (for App API)
+      to-user: "@all"             # Receiver user ID(s), @all for all users
+      to-party: ""                # Receiver department ID(s)
+      to-tag: ""                  # Receiver tag ID(s)
   
   # Advanced
   filter-order: -100               # Filter execution order

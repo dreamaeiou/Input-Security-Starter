@@ -88,6 +88,8 @@ public class InputSecurityProperties {
         private AutoAnalysisConfig autoAnalysis = new AutoAnalysisConfig();
         
         private FeishuConfig feishu = new FeishuConfig();
+        
+        private WeComConfig wecom = new WeComConfig();
 
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -128,6 +130,9 @@ public class InputSecurityProperties {
         
         public FeishuConfig getFeishu() { return feishu; }
         public void setFeishu(FeishuConfig feishu) { this.feishu = feishu; }
+        
+        public WeComConfig getWecom() { return wecom; }
+        public void setWecom(WeComConfig wecom) { this.wecom = wecom; }
     }
     
     public static class AdvancedConfig {
@@ -277,6 +282,40 @@ public class InputSecurityProperties {
             return appId != null && !appId.isEmpty() && 
                    appSecret != null && !appSecret.isEmpty() &&
                    receiveId != null && !receiveId.isEmpty();
+        }
+    }
+    
+    public static class WeComConfig {
+        private boolean enabled = false;
+        private String webhookUrl = "";
+        private String corpId = "";
+        private String corpSecret = "";
+        private String agentId = "";
+        private String toUser = "@all";
+        private String toParty = "";
+        private String toTag = "";
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getWebhookUrl() { return webhookUrl; }
+        public void setWebhookUrl(String webhookUrl) { this.webhookUrl = webhookUrl; }
+        public String getCorpId() { return corpId; }
+        public void setCorpId(String corpId) { this.corpId = corpId; }
+        public String getCorpSecret() { return corpSecret; }
+        public void setCorpSecret(String corpSecret) { this.corpSecret = corpSecret; }
+        public String getAgentId() { return agentId; }
+        public void setAgentId(String agentId) { this.agentId = agentId; }
+        public String getToUser() { return toUser; }
+        public void setToUser(String toUser) { this.toUser = toUser; }
+        public String getToParty() { return toParty; }
+        public void setToParty(String toParty) { this.toParty = toParty; }
+        public String getToTag() { return toTag; }
+        public void setToTag(String toTag) { this.toTag = toTag; }
+        
+        public boolean useAppApi() {
+            return corpId != null && !corpId.isEmpty() && 
+                   corpSecret != null && !corpSecret.isEmpty() &&
+                   agentId != null && !agentId.isEmpty();
         }
     }
 

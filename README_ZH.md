@@ -18,7 +18,7 @@ Input Security Starter 将传统 **WAF 规则引擎**、**Cyber Kill Chain 攻�
 
 - 🌍 **威胁情报增强**：可接入 AbuseIPDB，对攻击 IP 追加情报信息。
 
-- 📨 **飞书通知**：分析报告生成后可自动推送飞书卡片消息。
+- 📨 **多平台通知**：分析报告生成后可自动推送飞书或企业微信卡片消息。
 
 - 🚀 **性能优先**：异步日志、内存滑动窗口、会话清理机制，降低对业务链路的影响。
 
@@ -181,6 +181,17 @@ input-security:
       app-secret: "${FEISHU_APP_SECRET:}"
       receive-id-type: "${FEISHU_RECEIVE_ID_TYPE:chat_id}"
       receive-id: "${FEISHU_RECEIVE_ID:}"
+    
+    # 企业微信通知
+    wecom:
+      enabled: false
+      webhook-url: "${WECOM_WEBHOOK_URL:}"
+      corp-id: "${WECOM_CORP_ID:}"
+      corp-secret: "${WECOM_CORP_SECRET:}"
+      agent-id: "${WECOM_AGENT_ID:}"
+      to-user: "${WECOM_TO_USER:@all}"
+      to-party: "${WECOM_TO_PARTY:}"
+      to-tag: "${WECOM_TO_TAG:}"
 
   filter-order: -100
   enable-ui: true

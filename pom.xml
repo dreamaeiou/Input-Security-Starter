@@ -130,6 +130,16 @@
                     </archive>
                 </configuration>
             </plugin>
+            
+            <!-- Exec Maven Plugin for running Java classes -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
+                <configuration>
+                    <mainClass>org.example.input_security_starter.WeComConnectionTest</mainClass>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 

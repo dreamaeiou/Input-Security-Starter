@@ -8,6 +8,7 @@ import org.example.input_security_starter.llm.ip.AbuseIpDbClient;
 import org.example.input_security_starter.llm.ip.IpQueryService;
 import org.example.input_security_starter.llm.provider.LlmProvider;
 import org.example.input_security_starter.notification.FeishuNotifier;
+import org.example.input_security_starter.notification.WeComNotifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,15 +51,16 @@ public class LlmAnalysisService {
     private final long analysisTimeoutMs;
     private final ConcurrentHashMap<String, AnalysisReport> reportCache;
     private final FeishuNotifier feishuNotifier;
+    private final WeComNotifier weComNotifier;
     private final AtomicBoolean analysisInProgress;
     private final ExecutorService llmExecutor;
 
     public LlmAnalysisService(LlmProvider llmProvider, AbuseIpDbClient abuseIpDbClient, IpQueryService ipQueryService, String alertLogPath) {
-        this(llmProvider, abuseIpDbClient, ipQueryService, alertLogPath, 50, null);
+        this(llmProvider, abuseIpDbClient, ipQueryService, alertLogPath, 50, 24000, null, null);
     }
 
     public LlmAnalysisService(LlmProvider llmProvider, AbuseIpDbClient abuseIpDbClient, IpQueryService ipQueryService, String alertLogPath, int maxAlertsPerAnalysis) {
-        this(llmProvider, abuseIpDbClient, ipQueryService, alertLogPath, maxAlertsPerAnalysis, null);
+        this(llmProvider, abuseIpDbClient, ipQueryService, alertLogPath, maxAlertsPerAnalysis, 24000, null, null);
     }
 
     public LlmAnalysisService(
@@ -75,11 +77,9 @@ public class LlmAnalysisService {
             ipQueryService,
             alertLogPath,
             maxAlertsPerAnalysis,
-            24_000,
-            50,
-            50,
-            90_000,
-            feishuNotifier
+            24000,
+            feishuNotifier,
+            null
         );
     }
 
@@ -95,6 +95,34 @@ public class LlmAnalysisService {
         long analysisTimeoutMs,
         FeishuNotifier feishuNotifier
     ) {
+        this(
+            llmProvider,
+            abuseIpDbClient,
+            ipQueryService,
+            alertLogPath,
+            maxAlertsPerAnalysis,
+            maxPromptChars,
+            maxIpsPerAnalysis,
+            maxEventsPerIp,
+            analysisTimeoutMs,
+            feishuNotifier,
+            null
+        );
+    }
+
+    public LlmAnalysisService(
+        LlmProvider llmProvider,
+        AbuseIpDbClient abuseIpDbClient,
+        IpQueryService ipQueryService,
+        String alertLogPath,
+        int maxAlertsPerAnalysis,
+        int maxPromptChars,
+        int maxIpsPerAnalysis,
+        int maxEventsPerIp,
+        long analysisTimeoutMs,
+        FeishuNotifier feishuNotifier,
+        WeComNotifier weComNotifier
+    ) {
         this.llmProvider = llmProvider;
         this.abuseIpDbClient = abuseIpDbClient;
         this.ipQueryService = ipQueryService;
@@ -105,13 +133,39 @@ public class LlmAnalysisService {
         this.maxEventsPerIp = Math.max(1, maxEventsPerIp);
         this.analysisTimeoutMs = Math.max(1000, analysisTimeoutMs);
         this.feishuNotifier = feishuNotifier;
+        this.weComNotifier = weComNotifier;
         this.reportCache = new ConcurrentHashMap<String, AnalysisReport>();
         this.analysisInProgress = new AtomicBoolean(false);
         this.llmExecutor = Executors.newCachedThreadPool();
     }
 
+    public LlmAnalysisService(
+        LlmProvider llmProvider,
+        AbuseIpDbClient abuseIpDbClient,
+        IpQueryService ipQueryService,
+        String alertLogPath,
+        int maxAlertsPerAnalysis,
+        int maxPromptChars,
+        FeishuNotifier feishuNotifier,
+        WeComNotifier weComNotifier
+    ) {
+        this(
+            llmProvider,
+            abuseIpDbClient,
+            ipQueryService,
+            alertLogPath,
+            maxAlertsPerAnalysis,
+            maxPromptChars,
+            50,
+            50,
+            90_000,
+            feishuNotifier,
+            weComNotifier
+        );
+    }
+
     public LlmAnalysisService(LlmProvider llmProvider, AbuseIpDbClient abuseIpDbClient, String alertLogPath) {
-        this(llmProvider, abuseIpDbClient, null, alertLogPath, 50, null);
+        this(llmProvider, abuseIpDbClient, null, alertLogPath, 50, 24000, null, null);
     }
 
     public AnalysisReport analyzeAttackChainAlerts() {
@@ -171,6 +225,13 @@ public class LlmAnalysisService {
                     feishuNotifier.notifyAnalysisComplete(report);
                 } catch (Exception e) {
                     log.error("Failed to send Feishu notification: {}", e.getMessage(), e);
+                }
+            }
+            if (notifyFeishu && weComNotifier != null && weComNotifier.isEnabled()) {
+                try {
+                    weComNotifier.notifyAnalysisComplete(report);
+                } catch (Exception e) {
+                    log.error("Failed to send WeCom notification: {}", e.getMessage(), e);
                 }
             }
             return report;
