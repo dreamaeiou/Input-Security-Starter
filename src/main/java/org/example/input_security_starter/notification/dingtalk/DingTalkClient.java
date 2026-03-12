@@ -1,4 +1,4 @@
-package org.example.input_security_starter.notification;
+package org.example.input_security_starter.notification.dingtalk;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

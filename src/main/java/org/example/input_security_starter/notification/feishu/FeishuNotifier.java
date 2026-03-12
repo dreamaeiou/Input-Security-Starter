@@ -1,4 +1,4 @@
-package org.example.input_security_starter.notification;
+package org.example.input_security_starter.notification.feishu;
 
 import org.example.input_security_starter.llm.analysis.AnalysisReport;
 import org.slf4j.Logger;
