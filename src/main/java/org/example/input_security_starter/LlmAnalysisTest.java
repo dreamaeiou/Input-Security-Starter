@@ -11,16 +11,20 @@ import org.example.input_security_starter.llm.provider.aliyun.AliyunBailianConfi
 import org.example.input_security_starter.llm.provider.aliyun.AliyunBailianProvider;
 import org.example.input_security_starter.llm.provider.glm.GlmConfig;
 import org.example.input_security_starter.llm.provider.glm.GlmProvider;
-import org.example.input_security_starter.notification.FeishuClient;
-import org.example.input_security_starter.notification.FeishuNotifier;
-import org.example.input_security_starter.notification.WeComClient;
-import org.example.input_security_starter.notification.WeComNotifier;
+import org.example.input_security_starter.notification.feishu.FeishuClient;
+import org.example.input_security_starter.notification.feishu.FeishuNotifier;
+import org.example.input_security_starter.notification.wecom.WeComClient;
+import org.example.input_security_starter.notification.wecom.WeComNotifier;
+import org.example.input_security_starter.notification.dingtalk.DingTalkClient;
+import org.example.input_security_starter.notification.dingtalk.DingTalkNotifier;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 
 /**
  * LLM 分析功能测试类
@@ -31,6 +35,8 @@ public class LlmAnalysisTest {
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     public static void main(String[] args) {
+        loadEnvFile();
+        
         System.out.println("╔════════════════════════════════════════════════════════════════╗");
         System.out.println("║              LLM 分析功能完整测试                               ║");
         System.out.println("╚════════════════════════════════════════════════════════════════╝\n");
@@ -52,6 +58,14 @@ public class LlmAnalysisTest {
         String wecomToUser = getEnvOrDefault("WECOM_TO_USER", "@all");
         String wecomToParty = getEnvOrDefault("WECOM_TO_PARTY", "");
         String wecomToTag = getEnvOrDefault("WECOM_TO_TAG", "");
+        
+        String dingtalkWebhookUrl = getEnvOrDefault("DINGTALK_WEBHOOK_URL", "");
+        String dingtalkAppKey = getEnvOrDefault("DINGTALK_APP_KEY", "");
+        String dingtalkAppSecret = getEnvOrDefault("DINGTALK_APP_SECRET", "");
+        String dingtalkAgentId = getEnvOrDefault("DINGTALK_AGENT_ID", "");
+        String dingtalkUseridList = getEnvOrDefault("DINGTALK_USERID_LIST", "");
+        String dingtalkDeptIdList = getEnvOrDefault("DINGTALK_DEPT_ID_LIST", "");
+        boolean dingtalkToAllUser = Boolean.parseBoolean(getEnvOrDefault("DINGTALK_TO_ALL_USER", "true"));
 
         String apiKey;
         String model;
@@ -97,6 +111,14 @@ public class LlmAnalysisTest {
                 System.err.println("  - WECOM_TO_USER: 接收用户ID (默认 @all)");
                 System.err.println("  - WECOM_TO_PARTY: 接收部门ID");
                 System.err.println("  - WECOM_TO_TAG: 接收标签ID");
+                System.err.println("\n钉钉通知：");
+                System.err.println("  - DINGTALK_WEBHOOK_URL: 钉钉群机器人 Webhook URL");
+                System.err.println("  - DINGTALK_APP_SECRET: 钉钉机器人签名密钥 (可选)");
+                System.err.println("  - DINGTALK_APP_KEY: 钉钉企业应用 Key (应用API模式)");
+                System.err.println("  - DINGTALK_APP_SECRET: 钉钉企业应用密钥 (应用API模式)");
+                System.err.println("  - DINGTALK_AGENT_ID: 钉钉应用 ID (应用API模式)");
+                System.err.println("  - DINGTALK_TO_USER: 接收用户ID");
+                System.err.println("  - DINGTALK_TO_PARTY: 接收部门ID");
                 return;
             }
         }
@@ -263,6 +285,40 @@ public class LlmAnalysisTest {
             System.out.println("  企业微信连接测试: " + (wecomTestResult ? "成功" : "失败"));
         }
         
+        System.out.println("\n【步骤9.2】初始化钉钉通知客户端...");
+        boolean dingtalkUseAppApi = !dingtalkAppKey.isEmpty() && !dingtalkAppSecret.isEmpty();
+        DingTalkClient dingTalkClient = new DingTalkClient(
+            dingtalkWebhookUrl,
+            dingtalkAppKey,
+            dingtalkAppSecret,
+            dingtalkAgentId,
+            dingtalkUseridList,
+            dingtalkDeptIdList,
+            dingtalkToAllUser,
+            true
+        );
+        DingTalkNotifier dingTalkNotifier = new DingTalkNotifier(dingTalkClient);
+        System.out.println("  ✓ 钉钉客户端初始化完成");
+        System.out.println("  客户端启用状态: " + dingTalkClient.isEnabled());
+        System.out.println("  使用应用API模式: " + dingTalkClient.isUseAppApi());
+        if (dingtalkUseAppApi) {
+            System.out.println("  模式: 应用API");
+            System.out.println("  App Key: " + dingtalkAppKey);
+            System.out.println("  应用ID: " + dingtalkAgentId);
+            System.out.println("  接收用户: " + dingtalkUseridList);
+        } else if (!dingtalkWebhookUrl.isEmpty()) {
+            System.out.println("  模式: 群机器人Webhook");
+            System.out.println("  Webhook: " + dingtalkWebhookUrl.substring(0, Math.min(50, dingtalkWebhookUrl.length())) + "...");
+        } else {
+            System.out.println("  模式: 未配置");
+        }
+        
+        if (dingTalkClient.isEnabled()) {
+            System.out.println("\n【步骤9.3】测试钉钉连接...");
+            boolean dingtalkTestResult = dingTalkClient.testConnection();
+            System.out.println("  钉钉连接测试: " + (dingtalkTestResult ? "成功" : "失败"));
+        }
+        
         System.out.println("\n【步骤10】初始化 LLM 分析服务...");
         LlmAnalysisService service = new LlmAnalysisService(
             llmProvider, 
@@ -272,7 +328,8 @@ public class LlmAnalysisTest {
             50, 
             24000,
             feishuNotifier,
-            weComNotifier
+            weComNotifier,
+            dingTalkNotifier
         );
         System.out.println("  ✓ LlmAnalysisService 初始化完成");
 
@@ -302,6 +359,11 @@ public class LlmAnalysisTest {
             System.out.println("  ✓ 企业微信通知已自动发送");
         } else {
             System.out.println("  ⚠ 企业微信通知未启用");
+        }
+        if (dingTalkNotifier.isEnabled()) {
+            System.out.println("  ✓ 钉钉通知已自动发送");
+        } else {
+            System.out.println("  ⚠ 钉钉通知未启用");
         }
 
         System.out.println("\n╔════════════════════════════════════════════════════════════════╗");
@@ -372,6 +434,34 @@ public class LlmAnalysisTest {
 
     private static String getEnvOrDefault(String key, String defaultValue) {
         String value = System.getenv(key);
+        if (value == null || value.isEmpty()) {
+            value = System.getProperty(key);
+        }
         return (value != null && !value.isEmpty()) ? value : defaultValue;
+    }
+    
+    private static void loadEnvFile() {
+        Properties props = new Properties();
+        String[] envFiles = {".env", "../.env"};
+        
+        for (String envFile : envFiles) {
+            try {
+                File file = new File(envFile);
+                if (file.exists()) {
+                    try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+                        props.load(reader);
+                    }
+                    for (String key : props.stringPropertyNames()) {
+                        String value = props.getProperty(key);
+                        if (System.getenv(key) == null || System.getenv(key).isEmpty()) {
+                            System.setProperty(key, value);
+                        }
+                    }
+                    System.out.println("  已从 " + envFile + " 加载环境变量");
+                    return;
+                }
+            } catch (Exception e) {
+            }
+        }
     }
 }

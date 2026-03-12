@@ -2,8 +2,8 @@ package org.example.input_security_starter.llm.schedule;
 
 import org.example.input_security_starter.llm.analysis.AnalysisReport;
 import org.example.input_security_starter.llm.analysis.LlmAnalysisService;
-import org.example.input_security_starter.notification.FeishuClient;
-import org.example.input_security_starter.notification.FeishuNotifier;
+import org.example.input_security_starter.notification.feishu.FeishuClient;
+import org.example.input_security_starter.notification.feishu.FeishuNotifier;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;

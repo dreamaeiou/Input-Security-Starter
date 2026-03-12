@@ -2,8 +2,9 @@ package org.example.input_security_starter.llm.schedule;
 
 import org.example.input_security_starter.llm.analysis.AnalysisReport;
 import org.example.input_security_starter.llm.analysis.LlmAnalysisService;
-import org.example.input_security_starter.notification.FeishuNotifier;
-import org.example.input_security_starter.notification.WeComNotifier;
+import org.example.input_security_starter.notification.feishu.FeishuNotifier;
+import org.example.input_security_starter.notification.wecom.WeComNotifier;
+import org.example.input_security_starter.notification.dingtalk.DingTalkNotifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -21,6 +22,7 @@ public class ScheduledAnalysisTask {
     private final String scheduleCron;
     private final FeishuNotifier feishuNotifier;
     private final WeComNotifier weComNotifier;
+    private final DingTalkNotifier dingTalkNotifier;
 
     private final AtomicBoolean analysisInProgress = new AtomicBoolean(false);
 
@@ -28,7 +30,7 @@ public class ScheduledAnalysisTask {
                                   AlertCounter alertCounter,
                                   boolean enabled,
                                   long scheduleIntervalMs) {
-        this(llmAnalysisService, alertCounter, enabled, scheduleIntervalMs, null, null, null);
+        this(llmAnalysisService, alertCounter, enabled, scheduleIntervalMs, null, null, null, null);
     }
 
     public ScheduledAnalysisTask(LlmAnalysisService llmAnalysisService,
@@ -37,7 +39,7 @@ public class ScheduledAnalysisTask {
                                   long scheduleIntervalMs,
                                   String scheduleCron,
                                   FeishuNotifier feishuNotifier) {
-        this(llmAnalysisService, alertCounter, enabled, scheduleIntervalMs, scheduleCron, feishuNotifier, null);
+        this(llmAnalysisService, alertCounter, enabled, scheduleIntervalMs, scheduleCron, feishuNotifier, null, null);
     }
 
     public ScheduledAnalysisTask(LlmAnalysisService llmAnalysisService,
@@ -47,6 +49,17 @@ public class ScheduledAnalysisTask {
                                   String scheduleCron,
                                   FeishuNotifier feishuNotifier,
                                   WeComNotifier weComNotifier) {
+        this(llmAnalysisService, alertCounter, enabled, scheduleIntervalMs, scheduleCron, feishuNotifier, weComNotifier, null);
+    }
+
+    public ScheduledAnalysisTask(LlmAnalysisService llmAnalysisService,
+                                  AlertCounter alertCounter,
+                                  boolean enabled,
+                                  long scheduleIntervalMs,
+                                  String scheduleCron,
+                                  FeishuNotifier feishuNotifier,
+                                  WeComNotifier weComNotifier,
+                                  DingTalkNotifier dingTalkNotifier) {
         this.llmAnalysisService = llmAnalysisService;
         this.alertCounter = alertCounter;
         this.enabled = enabled;
@@ -54,6 +67,7 @@ public class ScheduledAnalysisTask {
         this.scheduleCron = scheduleCron;
         this.feishuNotifier = feishuNotifier;
         this.weComNotifier = weComNotifier;
+        this.dingTalkNotifier = dingTalkNotifier;
         
         log.info("ScheduledAnalysisTask initialized: enabled={}, intervalMs={}, cron={}",
                 enabled, scheduleIntervalMs, scheduleCron);
@@ -163,6 +177,13 @@ public class ScheduledAnalysisTask {
                 weComNotifier.notifyAnalysisComplete(report);
             } catch (Exception e) {
                 log.error("Failed to send WeCom notification after triggered analysis: {}", e.getMessage(), e);
+            }
+        }
+        if (dingTalkNotifier != null && dingTalkNotifier.isEnabled()) {
+            try {
+                dingTalkNotifier.notifyAnalysisComplete(report);
+            } catch (Exception e) {
+                log.error("Failed to send DingTalk notification after triggered analysis: {}", e.getMessage(), e);
             }
         }
     }

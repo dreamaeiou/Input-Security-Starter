@@ -16,10 +16,12 @@ import org.example.input_security_starter.llm.provider.glm.GlmConfig;
 import org.example.input_security_starter.llm.provider.glm.GlmProvider;
 import org.example.input_security_starter.llm.schedule.AlertCounter;
 import org.example.input_security_starter.llm.schedule.ScheduledAnalysisTask;
-import org.example.input_security_starter.notification.FeishuClient;
-import org.example.input_security_starter.notification.FeishuNotifier;
-import org.example.input_security_starter.notification.WeComClient;
-import org.example.input_security_starter.notification.WeComNotifier;
+import org.example.input_security_starter.notification.feishu.FeishuClient;
+import org.example.input_security_starter.notification.feishu.FeishuNotifier;
+import org.example.input_security_starter.notification.wecom.WeComClient;
+import org.example.input_security_starter.notification.wecom.WeComNotifier;
+import org.example.input_security_starter.notification.dingtalk.DingTalkClient;
+import org.example.input_security_starter.notification.dingtalk.DingTalkNotifier;
 import org.example.input_security_starter.tracker.AttackChainAlert;
 import org.example.input_security_starter.tracker.AttackChainTracker;
 import org.example.input_security_starter.web.InputSecurityController;
@@ -122,9 +124,10 @@ public class InputSecurityAutoConfiguration {
             @org.springframework.beans.factory.annotation.Autowired(required = false) ScheduledAnalysisTask scheduledAnalysisTask,
             @org.springframework.beans.factory.annotation.Autowired(required = false) AlertCounter alertCounter,
             @org.springframework.beans.factory.annotation.Autowired(required = false) FeishuNotifier feishuNotifier,
-            @org.springframework.beans.factory.annotation.Autowired(required = false) WeComNotifier weComNotifier) {
+            @org.springframework.beans.factory.annotation.Autowired(required = false) WeComNotifier weComNotifier,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) DingTalkNotifier dingTalkNotifier) {
         log.info("Creating InputSecurityController (enable-ui=true)");
-        return new InputSecurityController(ruleEngine, eventRecorder, llmAnalysisService, scheduledAnalysisTask, alertCounter, feishuNotifier, weComNotifier);
+        return new InputSecurityController(ruleEngine, eventRecorder, llmAnalysisService, scheduledAnalysisTask, alertCounter, feishuNotifier, weComNotifier, dingTalkNotifier);
     }
 
     @Bean
@@ -225,7 +228,8 @@ public class InputSecurityAutoConfiguration {
             IpQueryService ipQueryService,
             InputSecurityProperties properties,
             @org.springframework.beans.factory.annotation.Autowired(required = false) FeishuNotifier feishuNotifier,
-            @org.springframework.beans.factory.annotation.Autowired(required = false) WeComNotifier weComNotifier) {
+            @org.springframework.beans.factory.annotation.Autowired(required = false) WeComNotifier weComNotifier,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) DingTalkNotifier dingTalkNotifier) {
         String alertLogPath = properties.getAttackChain().getAlertLogPath();
         InputSecurityProperties.LlmConfig llmConfig = properties.getLlm();
         LlmAnalysisService service = new LlmAnalysisService(
@@ -239,7 +243,8 @@ public class InputSecurityAutoConfiguration {
             llmConfig.getMaxEventsPerIp(),
             llmConfig.getAnalysisTimeoutMs(),
             feishuNotifier,
-            weComNotifier
+            weComNotifier,
+            dingTalkNotifier
         );
         log.info("LlmAnalysisService created with provider: {}, monitoring alert log: {}", llmProvider.getName(), alertLogPath);
         return service;
@@ -296,6 +301,32 @@ public class InputSecurityAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnProperty(prefix = "input-security.llm.dingtalk", name = "enabled", havingValue = "true")
+    public DingTalkClient dingTalkClient(InputSecurityProperties properties) {
+        InputSecurityProperties.DingTalkConfig config = properties.getLlm().getDingtalk();
+        DingTalkClient client = new DingTalkClient(
+            config.getWebhookUrl(),
+            config.getAppKey(),
+            config.getAppSecret(),
+            config.getAgentId(),
+            config.getUseridList(),
+            config.getDeptIdList(),
+            config.isToAllUser(),
+            config.isEnabled()
+        );
+        log.info("DingTalkClient created: enabled={}, useAppApi={}", config.isEnabled(), client.isUseAppApi());
+        return client;
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "input-security.llm.dingtalk", name = "enabled", havingValue = "true")
+    public DingTalkNotifier dingTalkNotifier(DingTalkClient dingTalkClient) {
+        DingTalkNotifier notifier = new DingTalkNotifier(dingTalkClient);
+        log.info("DingTalkNotifier created");
+        return notifier;
+    }
+
+    @Bean
     @ConditionalOnProperty(prefix = "input-security.llm.auto-analysis", name = "enabled", havingValue = "true")
     public AlertCounter alertCounter(InputSecurityProperties properties) {
         String alertLogPath = properties.getAttackChain().getAlertLogPath();
@@ -312,7 +343,8 @@ public class InputSecurityAutoConfiguration {
             AlertCounter alertCounter,
             InputSecurityProperties properties,
             @org.springframework.beans.factory.annotation.Autowired(required = false) FeishuNotifier feishuNotifier,
-            @org.springframework.beans.factory.annotation.Autowired(required = false) WeComNotifier weComNotifier) {
+            @org.springframework.beans.factory.annotation.Autowired(required = false) WeComNotifier weComNotifier,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) DingTalkNotifier dingTalkNotifier) {
         
         InputSecurityProperties.AutoAnalysisConfig config = properties.getLlm().getAutoAnalysis();
         
@@ -323,7 +355,8 @@ public class InputSecurityAutoConfiguration {
             config.getScheduleIntervalMs(),
             config.getScheduleCron(),
             feishuNotifier,
-            weComNotifier
+            weComNotifier,
+            dingTalkNotifier
         );
         
         log.info("ScheduledAnalysisTask created: enabled={}, threshold={}, intervalHours={}, cron={}, countCheckIntervalMs={}",

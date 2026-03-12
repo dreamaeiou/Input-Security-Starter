@@ -13,6 +13,21 @@ function Write-Step {
     Write-Host "==> $Message" -ForegroundColor Cyan
 }
 
+function Write-Info {
+    param([string]$Message)
+    Write-Host "    $Message" -ForegroundColor DarkGray
+}
+
+function Write-Success {
+    param([string]$Message)
+    Write-Host "    [OK] $Message" -ForegroundColor Green
+}
+
+function Write-Warn {
+    param([string]$Message)
+    Write-Host "    [WARN] $Message" -ForegroundColor Yellow
+}
+
 function Import-DotEnv {
     param([string]$Path)
 
@@ -51,6 +66,18 @@ function Require-Env {
     }
 }
 
+function Check-Optional-Env {
+    param([string]$Key, [string]$Name)
+    $v = [Environment]::GetEnvironmentVariable($Key)
+    if ([string]::IsNullOrWhiteSpace($v)) {
+        Write-Warn "$Name not configured ($Key)"
+        return $false
+    } else {
+        Write-Success "$Name configured"
+        return $true
+    }
+}
+
 function Invoke-Maven {
     param([string[]]$MavenArgs)
     Write-Host ("mvn " + ($MavenArgs -join " ")) -ForegroundColor DarkGray
@@ -69,6 +96,15 @@ try {
     Write-Step "Loading environment variables from $EnvFile"
     Import-DotEnv -Path $EnvFile
     Require-Env -Keys @("GLM_API_KEY", "ABUSEIPDB_API_KEY")
+
+    Write-Host ""
+    Write-Host "    Notification Services Status:" -ForegroundColor Cyan
+    
+    $feishuEnabled = Check-Optional-Env -Key "FEISHU_APP_ID" -Name "Feishu"
+    $dingtalkEnabled = Check-Optional-Env -Key "DINGTALK_WEBHOOK_URL" -Name "DingTalk (Webhook)"
+    if (-not $dingtalkEnabled) {
+        $dingtalkEnabled = Check-Optional-Env -Key "DINGTALK_APP_KEY" -Name "DingTalk (App API)"
+    }
 
     if (-not $SkipGenerate) {
         Write-Step "Generating attack-chain-alerts.log using $GeneratorTest"
@@ -92,7 +128,16 @@ try {
     )
 
     Write-Step "Done"
+    Write-Host ""
     Write-Host "Full LLM flow completed successfully." -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Notifications sent to:" -ForegroundColor Cyan
+    if ($feishuEnabled) { Write-Success "Feishu" }
+    if ($wecomEnabled) { Write-Success "WeCom" }
+    if ($dingtalkEnabled) { Write-Success "DingTalk" }
+    if (-not ($feishuEnabled -or $wecomEnabled -or $dingtalkEnabled)) {
+        Write-Warn "No notification services configured"
+    }
     exit 0
 }
 catch {

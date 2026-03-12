@@ -90,6 +90,8 @@ public class InputSecurityProperties {
         private FeishuConfig feishu = new FeishuConfig();
         
         private WeComConfig wecom = new WeComConfig();
+        
+        private DingTalkConfig dingtalk = new DingTalkConfig();
 
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -133,6 +135,9 @@ public class InputSecurityProperties {
         
         public WeComConfig getWecom() { return wecom; }
         public void setWecom(WeComConfig wecom) { this.wecom = wecom; }
+        
+        public DingTalkConfig getDingtalk() { return dingtalk; }
+        public void setDingtalk(DingTalkConfig dingtalk) { this.dingtalk = dingtalk; }
     }
     
     public static class AdvancedConfig {
@@ -316,6 +321,39 @@ public class InputSecurityProperties {
             return corpId != null && !corpId.isEmpty() && 
                    corpSecret != null && !corpSecret.isEmpty() &&
                    agentId != null && !agentId.isEmpty();
+        }
+    }
+    
+    public static class DingTalkConfig {
+        private boolean enabled = false;
+        private String webhookUrl = "";
+        private String appKey = "";
+        private String appSecret = "";
+        private String agentId = "";
+        private String useridList = "";
+        private String deptIdList = "";
+        private boolean toAllUser = true;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getWebhookUrl() { return webhookUrl; }
+        public void setWebhookUrl(String webhookUrl) { this.webhookUrl = webhookUrl; }
+        public String getAppKey() { return appKey; }
+        public void setAppKey(String appKey) { this.appKey = appKey; }
+        public String getAppSecret() { return appSecret; }
+        public void setAppSecret(String appSecret) { this.appSecret = appSecret; }
+        public String getAgentId() { return agentId; }
+        public void setAgentId(String agentId) { this.agentId = agentId; }
+        public String getUseridList() { return useridList; }
+        public void setUseridList(String useridList) { this.useridList = useridList; }
+        public String getDeptIdList() { return deptIdList; }
+        public void setDeptIdList(String deptIdList) { this.deptIdList = deptIdList; }
+        public boolean isToAllUser() { return toAllUser; }
+        public void setToAllUser(boolean toAllUser) { this.toAllUser = toAllUser; }
+        
+        public boolean useAppApi() {
+            return appKey != null && !appKey.isEmpty() && 
+                   appSecret != null && !appSecret.isEmpty();
         }
     }
 

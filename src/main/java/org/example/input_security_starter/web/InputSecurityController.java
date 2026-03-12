@@ -7,8 +7,9 @@ import org.example.input_security_starter.llm.analysis.AnalysisReport;
 import org.example.input_security_starter.llm.analysis.LlmAnalysisService;
 import org.example.input_security_starter.llm.schedule.AlertCounter;
 import org.example.input_security_starter.llm.schedule.ScheduledAnalysisTask;
-import org.example.input_security_starter.notification.FeishuNotifier;
-import org.example.input_security_starter.notification.WeComNotifier;
+import org.example.input_security_starter.notification.feishu.FeishuNotifier;
+import org.example.input_security_starter.notification.wecom.WeComNotifier;
+import org.example.input_security_starter.notification.dingtalk.DingTalkNotifier;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,13 +36,15 @@ public class InputSecurityController {
     private final AlertCounter alertCounter;
     private final FeishuNotifier feishuNotifier;
     private final WeComNotifier weComNotifier;
+    private final DingTalkNotifier dingTalkNotifier;
 
     public InputSecurityController(OptimizedRuleEngine ruleEngine, EventRecorder eventRecorder,
                                    @Autowired(required = false) LlmAnalysisService llmAnalysisService,
                                    @Autowired(required = false) ScheduledAnalysisTask scheduledAnalysisTask,
                                    @Autowired(required = false) AlertCounter alertCounter,
                                    @Autowired(required = false) FeishuNotifier feishuNotifier,
-                                   @Autowired(required = false) WeComNotifier weComNotifier) {
+                                   @Autowired(required = false) WeComNotifier weComNotifier,
+                                   @Autowired(required = false) DingTalkNotifier dingTalkNotifier) {
         this.ruleEngine = ruleEngine;
         this.eventRecorder = eventRecorder;
         this.llmAnalysisService = llmAnalysisService;
@@ -49,6 +52,7 @@ public class InputSecurityController {
         this.alertCounter = alertCounter;
         this.feishuNotifier = feishuNotifier;
         this.weComNotifier = weComNotifier;
+        this.dingTalkNotifier = dingTalkNotifier;
     }
 
     @GetMapping("/test")
@@ -326,6 +330,28 @@ public class InputSecurityController {
         } catch (Exception e) {
             result.put("success", false);
             result.put("message", "WeCom notification test failed: " + e.getMessage());
+        }
+
+        return result;
+    }
+
+    @PostMapping("/dingtalk/test")
+    public Map<String, Object> testDingTalkNotification() {
+        Map<String, Object> result = new HashMap<>();
+
+        if (dingTalkNotifier == null) {
+            result.put("success", false);
+            result.put("message", "DingTalk notification is not enabled. Set input-security.llm.dingtalk.enabled=true to enable.");
+            return result;
+        }
+
+        try {
+            boolean success = dingTalkNotifier.testNotification();
+            result.put("success", success);
+            result.put("message", success ? "DingTalk notification test successful." : "DingTalk notification test failed.");
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "DingTalk notification test failed: " + e.getMessage());
         }
 
         return result;

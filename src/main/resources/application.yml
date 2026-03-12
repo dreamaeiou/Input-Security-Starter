@@ -87,6 +87,16 @@ input-security:
       to-user: "${WECOM_TO_USER:@all}"
       to-party: "${WECOM_TO_PARTY:}"
       to-tag: "${WECOM_TO_TAG:}"
+    
+    dingtalk:
+      enabled: false
+      webhook-url: "${DINGTALK_WEBHOOK_URL:}"
+      app-key: "${DINGTALK_APP_KEY:}"
+      app-secret: "${DINGTALK_APP_SECRET:}"
+      agent-id: "${DINGTALK_AGENT_ID:}"
+      userid-list: "${DINGTALK_USERID_LIST:}"
+      dept-id-list: "${DINGTALK_DEPT_ID_LIST:}"
+      to-all-user: "${DINGTALK_TO_ALL_USER:true}"
   
 
 spring:

@@ -7,8 +7,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.example.input_security_starter.llm.ip.AbuseIpDbClient;
 import org.example.input_security_starter.llm.ip.IpQueryService;
 import org.example.input_security_starter.llm.provider.LlmProvider;
-import org.example.input_security_starter.notification.FeishuNotifier;
-import org.example.input_security_starter.notification.WeComNotifier;
+import org.example.input_security_starter.notification.feishu.FeishuNotifier;
+import org.example.input_security_starter.notification.wecom.WeComNotifier;
+import org.example.input_security_starter.notification.dingtalk.DingTalkNotifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,6 +53,7 @@ public class LlmAnalysisService {
     private final ConcurrentHashMap<String, AnalysisReport> reportCache;
     private final FeishuNotifier feishuNotifier;
     private final WeComNotifier weComNotifier;
+    private final DingTalkNotifier dingTalkNotifier;
     private final AtomicBoolean analysisInProgress;
     private final ExecutorService llmExecutor;
 
@@ -123,6 +125,36 @@ public class LlmAnalysisService {
         FeishuNotifier feishuNotifier,
         WeComNotifier weComNotifier
     ) {
+        this(
+            llmProvider,
+            abuseIpDbClient,
+            ipQueryService,
+            alertLogPath,
+            maxAlertsPerAnalysis,
+            maxPromptChars,
+            maxIpsPerAnalysis,
+            maxEventsPerIp,
+            analysisTimeoutMs,
+            feishuNotifier,
+            weComNotifier,
+            null
+        );
+    }
+
+    public LlmAnalysisService(
+        LlmProvider llmProvider,
+        AbuseIpDbClient abuseIpDbClient,
+        IpQueryService ipQueryService,
+        String alertLogPath,
+        int maxAlertsPerAnalysis,
+        int maxPromptChars,
+        int maxIpsPerAnalysis,
+        int maxEventsPerIp,
+        long analysisTimeoutMs,
+        FeishuNotifier feishuNotifier,
+        WeComNotifier weComNotifier,
+        DingTalkNotifier dingTalkNotifier
+    ) {
         this.llmProvider = llmProvider;
         this.abuseIpDbClient = abuseIpDbClient;
         this.ipQueryService = ipQueryService;
@@ -134,9 +166,37 @@ public class LlmAnalysisService {
         this.analysisTimeoutMs = Math.max(1000, analysisTimeoutMs);
         this.feishuNotifier = feishuNotifier;
         this.weComNotifier = weComNotifier;
+        this.dingTalkNotifier = dingTalkNotifier;
         this.reportCache = new ConcurrentHashMap<String, AnalysisReport>();
         this.analysisInProgress = new AtomicBoolean(false);
         this.llmExecutor = Executors.newCachedThreadPool();
+    }
+
+    public LlmAnalysisService(
+        LlmProvider llmProvider,
+        AbuseIpDbClient abuseIpDbClient,
+        IpQueryService ipQueryService,
+        String alertLogPath,
+        int maxAlertsPerAnalysis,
+        int maxPromptChars,
+        FeishuNotifier feishuNotifier,
+        WeComNotifier weComNotifier,
+        DingTalkNotifier dingTalkNotifier
+    ) {
+        this(
+            llmProvider,
+            abuseIpDbClient,
+            ipQueryService,
+            alertLogPath,
+            maxAlertsPerAnalysis,
+            maxPromptChars,
+            10,
+            5,
+            60000,
+            feishuNotifier,
+            weComNotifier,
+            dingTalkNotifier
+        );
     }
 
     public LlmAnalysisService(
@@ -160,7 +220,8 @@ public class LlmAnalysisService {
             50,
             90_000,
             feishuNotifier,
-            weComNotifier
+            weComNotifier,
+            null
         );
     }
 
@@ -232,6 +293,13 @@ public class LlmAnalysisService {
                     weComNotifier.notifyAnalysisComplete(report);
                 } catch (Exception e) {
                     log.error("Failed to send WeCom notification: {}", e.getMessage(), e);
+                }
+            }
+            if (notifyFeishu && dingTalkNotifier != null && dingTalkNotifier.isEnabled()) {
+                try {
+                    dingTalkNotifier.notifyAnalysisComplete(report);
+                } catch (Exception e) {
+                    log.error("Failed to send DingTalk notification: {}", e.getMessage(), e);
                 }
             }
             return report;

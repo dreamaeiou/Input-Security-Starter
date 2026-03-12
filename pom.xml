@@ -137,7 +137,7 @@
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.1.0</version>
                 <configuration>
-                    <mainClass>org.example.input_security_starter.WeComConnectionTest</mainClass>
+                    <mainClass>org.example.input_security_starter.LlmAnalysisTest</mainClass>
                 </configuration>
             </plugin>
         </plugins>

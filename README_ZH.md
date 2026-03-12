@@ -18,7 +18,7 @@ Input Security Starter 将传统 **WAF 规则引擎**、**Cyber Kill Chain 攻�
 
 - 🌍 **威胁情报增强**：可接入 AbuseIPDB，对攻击 IP 追加情报信息。
 
-- 📨 **多平台通知**：分析报告生成后可自动推送飞书或企业微信卡片消息。
+- 📨 **多平台通知**：分析报告生成后可自动推送飞书、企业微信或钉钉卡片消息。
 
 - 🚀 **性能优先**：异步日志、内存滑动窗口、会话清理机制，降低对业务链路的影响。
 
@@ -26,10 +26,6 @@ Input Security Starter 将传统 **WAF 规则引擎**、**Cyber Kill Chain 攻�
 
 ## 🏗️ 架构概览
 
-当前实现采用**双触发分析机制**：
-
-- 攻击链告警累计达到阈值时自动触发分析
-- 到达 `schedule-cron` 指定时间时自动生成报告，并在分析完成后推送到飞书
 
 ```mermaid
 flowchart TB
@@ -80,6 +76,14 @@ flowchart TB
         P --> AD
         T --> AD
         AD --> AE["飞书开放平台"]
+        R --> AF["WeComNotifier.notifyAnalysisComplete(report)"]
+        P --> AF
+        T --> AF
+        AF --> AG["企业微信"]
+        R --> AH["DingTalkNotifier.notifyAnalysisComplete(report)"]
+        P --> AH
+        T --> AH
+        AH --> AI["钉钉开放平台"]
     end
 
     subgraph API["接口层"]
@@ -192,6 +196,17 @@ input-security:
       to-user: "${WECOM_TO_USER:@all}"
       to-party: "${WECOM_TO_PARTY:}"
       to-tag: "${WECOM_TO_TAG:}"
+
+    # 钉钉通知
+    dingtalk:
+      enabled: false
+      webhook-url: "${DINGTALK_WEBHOOK_URL:}"
+      app-key: "${DINGTALK_APP_KEY:}"
+      app-secret: "${DINGTALK_APP_SECRET:}"
+      agent-id: "${DINGTALK_AGENT_ID:}"
+      userid-list: "${DINGTALK_USERID_LIST:}"
+      dept-id-list: "${DINGTALK_DEPT_ID_LIST:}"
+      to-all-user: "${DINGTALK_TO_ALL_USER:true}"
 
   filter-order: -100
   enable-ui: true

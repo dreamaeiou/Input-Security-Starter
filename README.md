@@ -19,7 +19,7 @@ Input Security Starter perfectly combines traditional **WAF rule engine** with m
 
 - 🌍 **Threat Intelligence Enhancement**: Async integration with **AbuseIPDB** to automatically identify global malicious IPs, botnets, and Tor nodes.
 
-- 📱 **Multi-Platform Notification**: Integrated with **Feishu** and **WeCom (企业微信)**, automatically pushes interactive card messages to group chats or private chats after LLM analysis completes.
+- 📱 **Multi-Platform Notification**: Integrated with **Feishu**, **WeCom (企业微信)** and **DingTalk (钉钉)**, automatically pushes interactive card messages to group chats or private chats after LLM analysis completes.
 
 - 🚀 **Production-Grade Performance**: Async logging, memory circuit breaker protection, sliding window mechanism - zero business latency.
 
@@ -28,9 +28,6 @@ Input Security Starter perfectly combines traditional **WAF rule engine** with m
 
 ## 🏗️ Architecture Overview
 
-We use a **dual-trigger analysis mechanism**:
-- attack-chain alert count reaches a threshold
-- cron schedule is reached, then a report is generated automatically and pushed to Feishu after analysis
 
 ```mermaid
 flowchart TB
@@ -81,6 +78,14 @@ flowchart TB
         P --> AD
         T --> AD
         AD --> AE["Feishu Open Platform"]
+        R --> AF["WeComNotifier.notifyAnalysisComplete(report)"]
+        P --> AF
+        T --> AF
+        AF --> AG["WeCom"]
+        R --> AH["DingTalkNotifier.notifyAnalysisComplete(report)"]
+        P --> AH
+        T --> AH
+        AH --> AI["DingTalk Open Platform"]
     end
 
     subgraph API["APIs"]
@@ -202,6 +207,17 @@ input-security:
       to-user: "@all"             # Receiver user ID(s), @all for all users
       to-party: ""                # Receiver department ID(s)
       to-tag: ""                  # Receiver tag ID(s)
+
+    # DingTalk (钉钉) Notification
+    dingtalk:
+      enabled: false              # Enable DingTalk notification
+      webhook-url: ""            # Webhook URL for group bot (simple)
+      app-key: ""                # App Key (for App API)
+      app-secret: ""             # App Secret (for App API)
+      agent-id: ""               # Agent ID (for App API)
+      userid-list: ""            # Receiver user ID(s)
+      dept-id-list: ""           # Receiver department ID(s)
+      to-all-user: true          # Send to all users
   
   # Advanced
   filter-order: -100               # Filter execution order
