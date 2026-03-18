@@ -136,15 +136,32 @@ public class ScheduledAnalysisTask {
 
     private void triggerAnalysis() {
         try {
+            if (!alertCounter.hasNewAlerts()) {
+                log.info("Skip analysis: no new attack chain alerts");
+                return;
+            }
+
             alertCounter.markAnalysisStarted();
             
-            AnalysisReport report = llmAnalysisService.analyzeAttackChainAlerts(false);
+            LlmAnalysisService.IncrementalAnalysisResult result =
+                llmAnalysisService.analyzeAttackChainAlertsIncremental(alertCounter.getLastProcessedLine(), false);
+
+            if (result == null || !result.hasNewAlerts()) {
+                log.info("Skip analysis after incremental read: no new attack chain alerts");
+                return;
+            }
+
+            AnalysisReport report = result.getReport();
             
             if (report != null) {
                 log.info("LLM analysis completed: reportId={}, riskLevel={}, riskScore={}",
                         report.getReportId(), report.getRiskLevel(), report.getRiskScore());
-                sendFeishuAfterTriggeredAnalysis(report);
-                alertCounter.markAnalysisCompleted();
+                if (!"error".equalsIgnoreCase(report.getStatus())) {
+                    sendFeishuAfterTriggeredAnalysis(report);
+                    alertCounter.markAnalysisCompleted(result.getNewLastProcessedLine(), report.getReportId());
+                } else {
+                    log.warn("Skipping notification and checkpoint commit for error report: {}", report.getReportId());
+                }
             } else {
                 log.warn("LLM analysis returned no report");
             }

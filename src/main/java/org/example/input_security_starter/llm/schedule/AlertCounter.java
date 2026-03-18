@@ -17,6 +17,7 @@ public class AlertCounter {
 
     private final String alertLogPath;
     private final int alertThreshold;
+    private final AlertProcessingStateStore stateStore;
     private final AtomicInteger unprocessedCount = new AtomicInteger(0);
     private final AtomicLong lastProcessedLine = new AtomicLong(0);
     private final AtomicLong lastAnalysisTime = new AtomicLong(0);
@@ -24,16 +25,28 @@ public class AlertCounter {
     public AlertCounter(String alertLogPath, int alertThreshold) {
         this.alertLogPath = alertLogPath;
         this.alertThreshold = alertThreshold;
+        this.stateStore = new AlertProcessingStateStore(alertLogPath);
         initializeCounter();
     }
 
     private void initializeCounter() {
         try {
+            AlertProcessingState state = stateStore.load();
+            lastProcessedLine.set(Math.max(0L, state.getLastProcessedLine()));
+            lastAnalysisTime.set(Math.max(0L, state.getLastProcessedAt()));
+
             Path path = Paths.get(alertLogPath);
             if (Files.exists(path)) {
                 long lineCount = Files.lines(path).count();
-                lastProcessedLine.set(lineCount);
-                log.info("AlertCounter initialized: processedLines={}, threshold={}", lineCount, alertThreshold);
+                if (lineCount < lastProcessedLine.get()) {
+                    log.warn("Alert log appears truncated, resetting processed line pointer from {} to 0",
+                        lastProcessedLine.get());
+                    lastProcessedLine.set(0);
+                }
+                int pending = (int) Math.max(0L, lineCount - lastProcessedLine.get());
+                unprocessedCount.set(pending);
+                log.info("AlertCounter initialized: processedLines={}, totalLines={}, pending={}, threshold={}",
+                    lastProcessedLine.get(), lineCount, pending, alertThreshold);
             } else {
                 log.info("AlertCounter initialized: no existing log file, threshold={}", alertThreshold);
             }
@@ -63,7 +76,21 @@ public class AlertCounter {
         return 0;
     }
 
+    public boolean hasNewAlerts() {
+        int total = getTotalAlertCount();
+        long processed = lastProcessedLine.get();
+        if (total < processed) {
+            return total > 0;
+        }
+        return total > processed;
+    }
+
+    public long getLastProcessedLine() {
+        return lastProcessedLine.get();
+    }
+
     public boolean shouldTriggerByCount() {
+        refreshUnprocessedCountFromLog();
         int currentUnprocessed = unprocessedCount.get();
         boolean shouldTrigger = currentUnprocessed >= alertThreshold;
         if (shouldTrigger) {
@@ -90,19 +117,21 @@ public class AlertCounter {
     }
 
     public void markAnalysisCompleted() {
+        markAnalysisCompleted(getTotalAlertCount(), null);
+    }
+
+    public void markAnalysisCompleted(long newLastProcessedLine, String reportId) {
         int processed = unprocessedCount.getAndSet(0);
-        lastAnalysisTime.set(System.currentTimeMillis());
-        
-        try {
-            Path path = Paths.get(alertLogPath);
-            if (Files.exists(path)) {
-                long lineCount = Files.lines(path).count();
-                lastProcessedLine.set(lineCount);
-            }
-        } catch (IOException e) {
-            log.error("Failed to update processed line count: {}", e.getMessage());
-        }
-        
+        long completedAt = System.currentTimeMillis();
+        lastAnalysisTime.set(completedAt);
+        lastProcessedLine.set(Math.max(0L, newLastProcessedLine));
+
+        AlertProcessingState state = new AlertProcessingState();
+        state.setLastProcessedLine(lastProcessedLine.get());
+        state.setLastProcessedAt(completedAt);
+        state.setLastReportId(reportId);
+        stateStore.save(state);
+
         log.info("Analysis completed: processed={} alerts, counter reset", processed);
     }
 
@@ -111,6 +140,7 @@ public class AlertCounter {
     }
 
     public CounterStatus getStatus() {
+        refreshUnprocessedCountFromLog();
         return new CounterStatus(
             unprocessedCount.get(),
             getTotalAlertCount(),
@@ -118,6 +148,20 @@ public class AlertCounter {
             lastAnalysisTime.get(),
             lastProcessedLine.get()
         );
+    }
+
+    private void refreshUnprocessedCountFromLog() {
+        int total = getTotalAlertCount();
+        long processed = lastProcessedLine.get();
+
+        if (total < processed) {
+            log.warn("Alert log line count {} is below processed pointer {}, treating current file as new log",
+                total, processed);
+            processed = 0;
+            lastProcessedLine.set(0);
+        }
+
+        unprocessedCount.set((int) Math.max(0L, total - processed));
     }
 
     public static class CounterStatus {

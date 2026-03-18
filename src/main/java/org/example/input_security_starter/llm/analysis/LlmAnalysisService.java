@@ -234,8 +234,13 @@ public class LlmAnalysisService {
     }
 
     public AnalysisReport analyzeAttackChainAlerts(boolean notifyFeishu) {
+        IncrementalAnalysisResult result = analyzeAttackChainAlertsIncremental(0L, notifyFeishu);
+        return result != null ? result.getReport() : null;
+    }
+
+    public IncrementalAnalysisResult analyzeAttackChainAlertsIncremental(long lastProcessedLine, boolean notifyFeishu) {
         if (!analysisInProgress.compareAndSet(false, true)) {
-            return createErrorReport("Analysis already in progress", 0);
+            return IncrementalAnalysisResult.error(createErrorReport("Analysis already in progress", 0));
         }
 
         long startMs = System.currentTimeMillis();
@@ -243,27 +248,43 @@ public class LlmAnalysisService {
             File logFile = new File(alertLogPath);
             if (!logFile.exists() || logFile.length() == 0) {
                 log.info("Attack chain alert log is unavailable or empty: {}", alertLogPath);
-                return null;
+                return IncrementalAnalysisResult.noNewAlerts(lastProcessedLine);
             }
 
-            List<String> alertLogs = readAlertLogs(logFile);
+            IncrementalAlertReadResult readResult = readNewAlertLogs(logFile, lastProcessedLine);
+            if (!readResult.hasNewAlerts()) {
+                log.info("No new alert logs found after line {} in file: {}", lastProcessedLine, alertLogPath);
+                return IncrementalAnalysisResult.noNewAlerts(readResult.getEndLineInclusive());
+            }
+
+            List<String> alertLogs = readResult.getAlertLogs();
             if (alertLogs.isEmpty()) {
-                log.info("No valid alert logs found in file: {}", alertLogPath);
-                return null;
+                log.info("No valid new alert logs found after line {} in file: {}", lastProcessedLine, alertLogPath);
+                return IncrementalAnalysisResult.noNewAlerts(readResult.getEndLineInclusive());
             }
 
             AlertAggregator aggregator = new AlertAggregator(ipQueryService, maxAlertsPerAnalysis);
             AlertAggregator.AggregationResult aggregationResult = aggregator.aggregate(alertLogs);
 
             if (isBudgetExceeded(startMs)) {
-                return createLocalFallbackReport(aggregationResult, "Analysis timeout before LLM invocation", alertLogs.size());
+                AnalysisReport report = createLocalFallbackReport(
+                    aggregationResult,
+                    "Analysis timeout before LLM invocation",
+                    alertLogs.size()
+                );
+                return IncrementalAnalysisResult.withReport(report, readResult.getEndLineInclusive(), alertLogs.size());
             }
 
             String aggregatedJson = OBJECT_MAPPER.writeValueAsString(aggregationResult.toMap());
             String budgetedJson = applyInputBudget(aggregatedJson);
 
             if (isBudgetExceeded(startMs)) {
-                return createLocalFallbackReport(aggregationResult, "Analysis timeout after input budgeting", alertLogs.size());
+                AnalysisReport report = createLocalFallbackReport(
+                    aggregationResult,
+                    "Analysis timeout after input budgeting",
+                    alertLogs.size()
+                );
+                return IncrementalAnalysisResult.withReport(report, readResult.getEndLineInclusive(), alertLogs.size());
             }
 
             String llmResponse = callLlmWithTimeout(budgetedJson, startMs);
@@ -302,10 +323,10 @@ public class LlmAnalysisService {
                     log.error("Failed to send DingTalk notification: {}", e.getMessage(), e);
                 }
             }
-            return report;
+            return IncrementalAnalysisResult.withReport(report, readResult.getEndLineInclusive(), alertLogs.size());
         } catch (Exception e) {
             log.error("Failed to analyze attack chain alerts: {}", e.getMessage(), e);
-            return createErrorReport(e.getMessage(), 0);
+            return IncrementalAnalysisResult.error(createErrorReport(e.getMessage(), 0));
         } finally {
             analysisInProgress.set(false);
         }
@@ -420,10 +441,22 @@ public class LlmAnalysisService {
     }
 
     private List<String> readAlertLogs(File logFile) throws IOException {
+        return readNewAlertLogs(logFile, 0L).getAlertLogs();
+    }
+
+    private IncrementalAlertReadResult readNewAlertLogs(File logFile, long lastProcessedLine) throws IOException {
         List<String> logs = new ArrayList<String>();
+        long currentLine = 0L;
+        long effectiveLastProcessedLine = Math.max(0L, lastProcessedLine);
+
         try (BufferedReader reader = new BufferedReader(new FileReader(logFile))) {
             String line;
             while ((line = reader.readLine()) != null) {
+                currentLine++;
+                if (currentLine <= effectiveLastProcessedLine) {
+                    continue;
+                }
+
                 String trimmed = line.trim();
                 if (trimmed.isEmpty()) {
                     continue;
@@ -436,7 +469,13 @@ public class LlmAnalysisService {
                 }
             }
         }
-        return logs;
+
+        return new IncrementalAlertReadResult(
+            logs,
+            effectiveLastProcessedLine,
+            currentLine,
+            currentLine > effectiveLastProcessedLine
+        );
     }
 
     private AnalysisReport parseLlmResponse(String llmResponse, int alertCount) {
@@ -792,5 +831,77 @@ public class LlmAnalysisService {
     public boolean isLogFileExists() {
         File logFile = new File(alertLogPath);
         return logFile.exists() && logFile.length() > 0;
+    }
+
+    public static class IncrementalAnalysisResult {
+        private final AnalysisReport report;
+        private final long newLastProcessedLine;
+        private final int newAlertCount;
+        private final boolean hasNewAlerts;
+
+        private IncrementalAnalysisResult(AnalysisReport report, long newLastProcessedLine, int newAlertCount, boolean hasNewAlerts) {
+            this.report = report;
+            this.newLastProcessedLine = newLastProcessedLine;
+            this.newAlertCount = newAlertCount;
+            this.hasNewAlerts = hasNewAlerts;
+        }
+
+        public static IncrementalAnalysisResult withReport(AnalysisReport report, long newLastProcessedLine, int newAlertCount) {
+            return new IncrementalAnalysisResult(report, newLastProcessedLine, newAlertCount, true);
+        }
+
+        public static IncrementalAnalysisResult noNewAlerts(long currentLastProcessedLine) {
+            return new IncrementalAnalysisResult(null, currentLastProcessedLine, 0, false);
+        }
+
+        public static IncrementalAnalysisResult error(AnalysisReport report) {
+            return new IncrementalAnalysisResult(report, 0L, 0, true);
+        }
+
+        public AnalysisReport getReport() {
+            return report;
+        }
+
+        public long getNewLastProcessedLine() {
+            return newLastProcessedLine;
+        }
+
+        public int getNewAlertCount() {
+            return newAlertCount;
+        }
+
+        public boolean hasNewAlerts() {
+            return hasNewAlerts;
+        }
+    }
+
+    private static class IncrementalAlertReadResult {
+        private final List<String> alertLogs;
+        private final long startLineExclusive;
+        private final long endLineInclusive;
+        private final boolean hasNewAlerts;
+
+        private IncrementalAlertReadResult(List<String> alertLogs, long startLineExclusive, long endLineInclusive, boolean hasNewAlerts) {
+            this.alertLogs = alertLogs;
+            this.startLineExclusive = startLineExclusive;
+            this.endLineInclusive = endLineInclusive;
+            this.hasNewAlerts = hasNewAlerts;
+        }
+
+        public List<String> getAlertLogs() {
+            return alertLogs;
+        }
+
+        public long getStartLineExclusive() {
+            return startLineExclusive;
+        }
+
+        public long getEndLineInclusive() {
+            return endLineInclusive;
+        }
+
+        public boolean hasNewAlerts() {
+            return hasNewAlerts;
+        }
     }
 }

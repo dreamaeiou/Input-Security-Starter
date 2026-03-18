@@ -6,7 +6,9 @@ import org.example.input_security_starter.notification.feishu.FeishuClient;
 import org.example.input_security_starter.notification.feishu.FeishuNotifier;
 import org.junit.jupiter.api.Test;
 
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileWriter;
 import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -19,6 +21,7 @@ class ScheduledAnalysisTaskTest {
     void shouldSendFeishuWhenCronTriggerRuns() throws Exception {
         File alertLog = File.createTempFile("scheduled-cron", ".log");
         try {
+            writeAlertLine(alertLog, "{\"client_ip\":\"1.2.3.4\",\"events\":[],\"ts\":1}");
             AlertCounter alertCounter = new AlertCounter(alertLog.getAbsolutePath(), 5);
             RecordingLlmAnalysisService llmService = new RecordingLlmAnalysisService();
             RecordingFeishuNotifier notifier = new RecordingFeishuNotifier(true);
@@ -41,6 +44,7 @@ class ScheduledAnalysisTaskTest {
             assertEquals(0, alertCounter.getUnprocessedCount());
         } finally {
             alertLog.delete();
+            new File(alertLog.getAbsolutePath() + ".state.json").delete();
         }
     }
 
@@ -48,6 +52,8 @@ class ScheduledAnalysisTaskTest {
     void shouldSendFeishuWhenAlertCountExceedsThreshold() throws Exception {
         File alertLog = File.createTempFile("scheduled-threshold", ".log");
         try {
+            writeAlertLine(alertLog, "{\"client_ip\":\"1.2.3.4\",\"events\":[],\"ts\":1}");
+            writeAlertLine(alertLog, "{\"client_ip\":\"5.6.7.8\",\"events\":[],\"ts\":2}");
             AlertCounter alertCounter = new AlertCounter(alertLog.getAbsolutePath(), 2);
             alertCounter.onNewAlert();
             alertCounter.onNewAlert();
@@ -73,6 +79,44 @@ class ScheduledAnalysisTaskTest {
             assertTrue(alertCounter.getLastAnalysisTime() > 0);
         } finally {
             alertLog.delete();
+            new File(alertLog.getAbsolutePath() + ".state.json").delete();
+        }
+    }
+
+    @Test
+    void shouldSkipWhenNoNewAlertsExist() throws Exception {
+        File alertLog = File.createTempFile("scheduled-skip", ".log");
+        try {
+            writeAlertLine(alertLog, "{\"client_ip\":\"1.2.3.4\",\"events\":[],\"ts\":1}");
+            AlertCounter alertCounter = new AlertCounter(alertLog.getAbsolutePath(), 1);
+            alertCounter.markAnalysisCompleted(alertCounter.getTotalAlertCount(), "rpt-old");
+
+            RecordingLlmAnalysisService llmService = new RecordingLlmAnalysisService();
+            RecordingFeishuNotifier notifier = new RecordingFeishuNotifier(true);
+
+            ScheduledAnalysisTask task = new ScheduledAnalysisTask(
+                llmService,
+                alertCounter,
+                true,
+                24L * 60L * 60L * 1000L,
+                "0 0 2 * * ?",
+                notifier
+            );
+
+            task.scheduledCronAnalysis();
+
+            assertEquals(0, llmService.callCount);
+            assertEquals(0, notifier.notifyCount);
+        } finally {
+            alertLog.delete();
+            new File(alertLog.getAbsolutePath() + ".state.json").delete();
+        }
+    }
+
+    private void writeAlertLine(File file, String line) throws Exception {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(file, true))) {
+            writer.write(line);
+            writer.newLine();
         }
     }
 
@@ -85,7 +129,7 @@ class ScheduledAnalysisTaskTest {
         }
 
         @Override
-        public AnalysisReport analyzeAttackChainAlerts(boolean notifyFeishu) {
+        public IncrementalAnalysisResult analyzeAttackChainAlertsIncremental(long lastProcessedLine, boolean notifyFeishu) {
             callCount++;
             lastNotifyFeishu = notifyFeishu;
 
@@ -97,7 +141,7 @@ class ScheduledAnalysisTaskTest {
             report.setAlertCount(3);
             report.setSummary("scheduled analysis completed");
             report.setRecommendations(Collections.singletonList("block attacker"));
-            return report;
+            return IncrementalAnalysisResult.withReport(report, lastProcessedLine + 3, 3);
         }
     }
 
