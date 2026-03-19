@@ -93,6 +93,7 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
                     <mainClass>org.example.input_security_starter.InputSecuritySdkApplication</mainClass>
+                    <classifier>exec</classifier>
                 </configuration>
             </plugin>
             

@@ -92,6 +92,7 @@ public class InputSecurityController {
     @GetMapping("/stats")
     public Map<String, Object> getAttackStats(@RequestParam(defaultValue = "24") int lastNHours) {
         Map<String, Object> result = new HashMap<>();
+        result.put("totalEvents", eventRecorder.getStoredEventCount());
         
         Map<String, Integer> typeStats = eventRecorder.getAttackTypeStats();
         List<Map<String, Object>> pieData = typeStats.entrySet().stream()

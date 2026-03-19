@@ -3,105 +3,185 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>输入安全测试</title>
+    <title>攻防演示台</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
+            margin: 0;
+            font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+            background: #f2f5fa;
+            color: #1e2b3d;
+        }
+
+        .wrap {
+            max-width: 920px;
             margin: 0 auto;
-            padding: 20px;
+            padding: 20px 16px 30px;
         }
-        .form-group {
-            margin-bottom: 15px;
-        }
-        label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-        }
-        input[type="text"] {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            box-sizing: border-box;
-        }
-        button {
-            background-color: #007bff;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
-        .result {
-            margin-top: 20px;
-            padding: 15px;
-            border-radius: 4px;
-        }
-        .blocked {
-            background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
-            color: #721c24;
-        }
-        .allowed {
-            background-color: #d4edda;
-            border: 1px solid #c3e6cb;
-            color: #155724;
-        }
+
         .nav-links {
-            margin-bottom: 20px;
+            margin-bottom: 14px;
         }
+
         .nav-links a {
-            color: #007bff;
+            color: #2b5ac6;
             text-decoration: none;
-            margin-right: 15px;
+            margin-right: 12px;
+            font-size: 14px;
         }
+
         .nav-links a:hover {
             text-decoration: underline;
         }
+
+        h1 {
+            margin: 0 0 10px;
+            font-size: 30px;
+        }
+
+        .sub {
+            color: #4f5e77;
+            margin: 0 0 16px;
+            font-size: 14px;
+        }
+
         .mode-info {
-            background-color: #e9ecef;
+            background: #e8eefb;
+            border: 1px solid #cad8f7;
             padding: 10px;
-            border-radius: 4px;
-            margin-bottom: 20px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+
+        form {
+            background: #fff;
+            border: 1px solid #d9e1ef;
+            border-radius: 10px;
+            padding: 16px;
+        }
+
+        .form-group {
+            margin-bottom: 10px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccd7ea;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+
+        .quick-samples {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin: 10px 0 14px;
+        }
+
+        .sample-btn {
+            border: 1px solid #ced9ef;
+            background: #f8fbff;
+            color: #304a76;
+            border-radius: 999px;
+            padding: 6px 10px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .sample-btn:hover {
+            border-color: #6f90d8;
+        }
+
+        button[type="submit"] {
+            background: #2550b8;
+            color: #fff;
+            padding: 9px 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        button[type="submit"]:hover {
+            background: #1b3f92;
+        }
+
+        .result {
+            margin-top: 16px;
+            padding: 14px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            background: #fff;
+        }
+
+        .blocked {
+            background: #ffecee;
+            border-color: #ffbec8;
+            color: #7d2132;
+        }
+
+        .allowed {
+            background: #ebfbf6;
+            border-color: #b9ecdd;
+            color: #135b46;
         }
     </style>
 </head>
 <body>
+<div class="wrap">
     <div class="nav-links">
-        <a href="/input-security-view/events">查看安全事件记录</a>
+        <a href="/input-security-view/dashboard">安全总览</a>
+        <a href="/input-security-view/analysis">分析报告</a>
+        <a href="/input-security-view/events">事件明细</a>
     </div>
-    
-    <h1>输入安全测试</h1>
-    
+
+    <h1>攻防演示台</h1>
+    <p class="sub">用于现场演示输入检测、规则命中和拦截效果</p>
+
     <div class="mode-info">
-        当前工作模式: <span th:text="${mode}"></span>
+        当前工作模式: <strong th:text="${mode}"></strong>
     </div>
-    
+
     <form action="#" th:action="@{/input-security-view/test}" method="get">
         <div class="form-group">
-            <label for="input">输入内容:</label>
+            <label for="input">输入内容</label>
             <input type="text" id="input" name="input" th:value="${input}" placeholder="请输入要测试的内容">
         </div>
-        <button type="submit">测试输入</button>
+
+        <div class="quick-samples">
+            <button type="button" class="sample-btn" onclick="setSample('&lt;script&gt;alert(1)&lt;/script&gt;')">XSS样例</button>
+            <button type="button" class="sample-btn" onclick="setSample(\"' OR '1'='1\")">SQL注入样例</button>
+            <button type="button" class="sample-btn" onclick="setSample('../../etc/passwd')">路径遍历样例</button>
+            <button type="button" class="sample-btn" onclick="setSample('http://169.254.169.254/latest/meta-data')">SSRF样例</button>
+        </div>
+
+        <button type="submit">执行测试</button>
     </form>
-    
+
     <div th:if="${input != null}">
         <h2>测试结果</h2>
         <div th:class="${blocked} ? 'result blocked' : 'result allowed'">
             <p><strong>输入内容:</strong> <span th:text="${input}"></span></p>
-            <p><strong>检测结果:</strong> 
-                <span th:if="${blocked}">阻止</span>
-                <span th:unless="${blocked}">允许</span>
+            <p><strong>检测结果:</strong>
+                <span th:if="${blocked}">拦截</span>
+                <span th:unless="${blocked}">放行</span>
             </p>
-            <p><strong>触发规则:</strong> 
-                <span th:text="${hitRule ?: '无'}"></span>
-            </p>
+            <p><strong>触发规则:</strong> <span th:text="${hitRule ?: '无'}"></span></p>
         </div>
     </div>
+</div>
+
+<script>
+    function setSample(text) {
+        document.getElementById("input").value = text;
+    }
+</script>
 </body>
 </html>

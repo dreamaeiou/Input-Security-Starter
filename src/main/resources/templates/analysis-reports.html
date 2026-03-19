@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分析报告中心</title>
+    <style>
+        :root {
+            --bg: #0a1324;
+            --panel: #111d34;
+            --panel-2: #182744;
+            --line: #274062;
+            --text: #e6eefb;
+            --muted: #9bb0cc;
+            --accent: #2ed3b7;
+            --warn: #ffb020;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+            color: var(--text);
+            background: linear-gradient(160deg, #0d1a30 0%, var(--bg) 55%);
+        }
+
+        .wrap {
+            max-width: 1320px;
+            margin: 0 auto;
+            padding: 18px;
+        }
+
+        .top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 26px;
+        }
+
+        .tips {
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .nav a {
+            color: var(--text);
+            text-decoration: none;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 13px;
+            margin-left: 8px;
+        }
+
+        .nav a:hover {
+            color: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 8px;
+            margin: 12px 0;
+        }
+
+        .btn {
+            border: 1px solid var(--line);
+            color: var(--text);
+            background: transparent;
+            border-radius: 8px;
+            padding: 9px 14px;
+            cursor: pointer;
+        }
+
+        .btn:hover {
+            color: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .btn.primary {
+            border-color: var(--accent);
+            color: #06261f;
+            background: linear-gradient(120deg, #24c9ad 0%, #7ce4d4 100%);
+            font-weight: 700;
+        }
+
+        .status-bar {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 10px 12px;
+            margin-bottom: 12px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 360px 1fr;
+            gap: 12px;
+        }
+
+        .panel {
+            border: 1px solid var(--line);
+            background: linear-gradient(145deg, var(--panel-2) 0%, var(--panel) 100%);
+            border-radius: 10px;
+            min-height: 540px;
+            overflow: hidden;
+        }
+
+        .panel-head {
+            padding: 12px;
+            border-bottom: 1px solid var(--line);
+            font-size: 14px;
+            color: var(--muted);
+        }
+
+        .report-list {
+            max-height: 560px;
+            overflow: auto;
+        }
+
+        .report-item {
+            padding: 12px;
+            border-bottom: 1px solid #223654;
+            cursor: pointer;
+        }
+
+        .report-item:hover {
+            background: rgba(46, 211, 183, 0.08);
+        }
+
+        .report-item.active {
+            background: rgba(46, 211, 183, 0.14);
+            border-left: 3px solid var(--accent);
+        }
+
+        .report-id {
+            font-size: 12px;
+            color: #7fd9cb;
+            margin-bottom: 4px;
+        }
+
+        .report-meta {
+            font-size: 12px;
+            color: var(--muted);
+            line-height: 1.5;
+        }
+
+        .detail {
+            padding: 14px;
+            overflow: auto;
+            max-height: 620px;
+        }
+
+        .kvs {
+            display: grid;
+            grid-template-columns: 120px 1fr;
+            gap: 8px;
+            font-size: 13px;
+            margin-bottom: 12px;
+        }
+
+        .k {
+            color: var(--muted);
+        }
+
+        .v {
+            color: var(--text);
+            word-break: break-word;
+        }
+
+        .json-box {
+            background: #0e1a31;
+            border: 1px solid #2a4468;
+            border-radius: 10px;
+            padding: 12px;
+            color: #d7e5fc;
+            white-space: pre-wrap;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .empty {
+            color: var(--warn);
+            font-size: 13px;
+        }
+
+        @media (max-width: 980px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            .top {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .nav a {
+                margin: 0 8px 8px 0;
+                display: inline-block;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="top">
+        <div>
+            <h1>分析报告中心</h1>
+            <div class="tips">聚合展示 LLM 研判结果，支持触发增量分析（mode: <span th:text="${mode}"></span>）</div>
+        </div>
+        <div class="nav">
+            <a href="/input-security-view/dashboard">安全总览</a>
+            <a href="/input-security-view/events">事件明细</a>
+            <a href="/input-security-view/test">攻防演示台</a>
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <button class="btn primary" onclick="triggerForceAnalysis()">触发增量分析</button>
+        <button class="btn" onclick="loadReports()">刷新报告列表</button>
+    </div>
+
+    <div id="statusBar" class="status-bar">准备就绪</div>
+
+    <div class="grid">
+        <div class="panel">
+            <div class="panel-head">报告列表</div>
+            <div id="reportList" class="report-list"></div>
+        </div>
+        <div class="panel">
+            <div class="panel-head">报告详情</div>
+            <div id="reportDetail" class="detail">
+                <div class="empty">请选择左侧报告查看详情</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let reportCache = [];
+    let activeReportId = null;
+
+    function setStatus(message) {
+        document.getElementById("statusBar").textContent = message;
+    }
+
+    function readField(report, keys) {
+        for (let i = 0; i < keys.length; i++) {
+            const k = keys[i];
+            if (report[k] !== undefined && report[k] !== null) {
+                return report[k];
+            }
+        }
+        return "-";
+    }
+
+    async function triggerForceAnalysis() {
+        setStatus("正在触发分析任务...");
+        try {
+            const res = await fetch("/input-security-api/llm/analyze/force", { method: "POST" });
+            const data = await res.json();
+            setStatus(data.message || "触发完成");
+            setTimeout(loadReports, 1200);
+        } catch (e) {
+            console.error(e);
+            setStatus("触发失败: " + e.message);
+        }
+    }
+
+    function renderReportList(reports) {
+        const list = document.getElementById("reportList");
+        if (!reports || reports.length === 0) {
+            list.innerHTML = "<div class='report-item'><div class='report-meta'>暂无报告数据</div></div>";
+            return;
+        }
+
+        list.innerHTML = reports.map(function (r) {
+            const reportId = readField(r, ["reportId", "report_id", "id"]);
+            const createdAt = readField(r, ["createdAt", "created_at", "createTime", "analysis_time", "timestamp"]);
+            const risk = readField(r, ["overallRisk", "riskLevel", "risk_level", "risk", "risk_score"]);
+            const eventCount = readField(r, ["eventCount", "totalEvents", "alertCount", "alert_count"]);
+            const activeClass = reportId === activeReportId ? "report-item active" : "report-item";
+            return "<div class='" + activeClass + "' onclick=\"showDetail('" + String(reportId).replace(/'/g, "\\'") + "')\">" +
+                "<div class='report-id'>" + reportId + "</div>" +
+                "<div class='report-meta'>风险等级: " + risk + "</div>" +
+                "<div class='report-meta'>事件数: " + eventCount + "</div>" +
+                "<div class='report-meta'>生成时间: " + createdAt + "</div>" +
+                "</div>";
+        }).join("");
+    }
+
+    function renderReportDetail(report) {
+        const container = document.getElementById("reportDetail");
+        if (!report) {
+            container.innerHTML = "<div class='empty'>未找到报告详情</div>";
+            return;
+        }
+
+        const reportId = readField(report, ["reportId", "report_id", "id"]);
+        const createdAt = readField(report, ["createdAt", "created_at", "createTime", "analysis_time", "timestamp"]);
+        const risk = readField(report, ["overallRisk", "riskLevel", "risk_level", "risk", "risk_score"]);
+        const eventCount = readField(report, ["eventCount", "totalEvents", "alertCount", "alert_count"]);
+
+        container.innerHTML =
+            "<div class='kvs'>" +
+            "<div class='k'>报告ID</div><div class='v'>" + reportId + "</div>" +
+            "<div class='k'>生成时间</div><div class='v'>" + createdAt + "</div>" +
+            "<div class='k'>风险等级</div><div class='v'>" + risk + "</div>" +
+            "<div class='k'>事件数量</div><div class='v'>" + eventCount + "</div>" +
+            "</div>" +
+            "<div class='json-box'>" + escapeHtml(JSON.stringify(report, null, 2)) + "</div>";
+    }
+
+    async function showDetail(reportId) {
+        activeReportId = reportId;
+        renderReportList(reportCache);
+        setStatus("加载报告详情: " + reportId);
+        try {
+            const res = await fetch("/input-security-api/llm/reports/" + encodeURIComponent(reportId));
+            const data = await res.json();
+            if (!data.success) {
+                setStatus(data.message || "报告详情加载失败");
+                renderReportDetail(null);
+                return;
+            }
+            setStatus("报告详情已更新");
+            renderReportDetail(data.report || {});
+        } catch (e) {
+            console.error(e);
+            setStatus("报告详情加载失败: " + e.message);
+            renderReportDetail(null);
+        }
+    }
+
+    async function loadReports() {
+        setStatus("加载报告列表中...");
+        try {
+            const res = await fetch("/input-security-api/llm/reports");
+            const data = await res.json();
+            if (!data.success) {
+                setStatus(data.message || "报告列表加载失败");
+                reportCache = [];
+                renderReportList([]);
+                return;
+            }
+            reportCache = data.reports || [];
+            renderReportList(reportCache);
+            setStatus("报告列表已更新，共 " + (data.count || 0) + " 条");
+            if (reportCache.length > 0) {
+                const first = readField(reportCache[0], ["reportId", "report_id", "id"]);
+                showDetail(activeReportId || first);
+            }
+        } catch (e) {
+            console.error(e);
+            setStatus("报告列表加载失败: " + e.message);
+            reportCache = [];
+            renderReportList([]);
+        }
+    }
+
+    function escapeHtml(input) {
+        return String(input || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+    }
+
+    loadReports();
+</script>
+</body>
+</html>

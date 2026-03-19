@@ -73,6 +73,28 @@ public class ViewController {
         model.addAttribute("mode", properties.getMode().name().toLowerCase());
         return "security-events";
     }
+
+    /**
+     * 安全驾驶舱页面
+     * @param model Thymeleaf 模型
+     * @return 模板名称
+     */
+    @GetMapping("/dashboard")
+    public String dashboard(Model model) {
+        model.addAttribute("mode", properties.getMode().name().toLowerCase());
+        return "dashboard";
+    }
+
+    /**
+     * 分析报告页面
+     * @param model Thymeleaf 模型
+     * @return 模板名称
+     */
+    @GetMapping("/analysis")
+    public String analysis(Model model) {
+        model.addAttribute("mode", properties.getMode().name().toLowerCase());
+        return "analysis-reports";
+    }
     
     /**
      * 首页重定向
@@ -80,6 +102,6 @@ public class ViewController {
      */
     @GetMapping("/")
     public String index() {
-        return "redirect:/input-security-view/test";
+        return "redirect:/input-security-view/dashboard";
     }
 }

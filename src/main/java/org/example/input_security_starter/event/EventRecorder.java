@@ -205,6 +205,20 @@ public class EventRecorder {
     }
 
     /**
+     * 获取内存中当前存储的事件总数
+     * 注意：该值受 MAX_EVENTS 上限影响
+     * @return 事件总数
+     */
+    public int getStoredEventCount() {
+        memoryLock.lock();
+        try {
+            return events.size();
+        } finally {
+            memoryLock.unlock();
+        }
+    }
+
+    /**
      * 获取攻击类型统计（按规则名称分组）
      * @return 规则名称到数量的映射
      */

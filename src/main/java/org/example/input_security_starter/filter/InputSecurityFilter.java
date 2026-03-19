@@ -75,6 +75,12 @@ public class InputSecurityFilter implements Filter {
         this.maxBodySize = DEFAULT_MAX_BODY_SIZE;
         this.trustedProxies = trustedProxies != null ? trustedProxies : Collections.emptyList();
         this.detailedViolationHandler = new DetailedViolationHandler(ruleEngine, eventRecorder);
+        log.info("InputSecurityFilter initialized - excludePaths: {}", properties.getExcludePaths());
+    }
+
+    @Override
+    public void init(FilterConfig filterConfig) throws ServletException {
+        log.info("InputSecurityFilter init - excludePaths: {}", properties.getExcludePaths());
     }
 
     /**
@@ -99,33 +105,42 @@ public class InputSecurityFilter implements Filter {
         String clientIp = getClientIp(httpRequest);
 
         if (shouldExclude(url)) {
+            log.debug("URL excluded from security check: {}", url);
             chain.doFilter(request, response);
             return;
         }
 
         String rule = checkParameters(httpRequest);
         if (rule != null) {
-            handleViolation(rule, "parameter", url, method, clientIp, (HttpServletResponse) response);
-            return;
+            boolean blocked = handleViolation(rule, "parameter", url, method, clientIp, (HttpServletResponse) response);
+            if (blocked) {
+                return;
+            }
         }
 
         rule = checkHeaders(httpRequest);
         if (rule != null) {
-            handleViolation(rule, "header", url, method, clientIp, (HttpServletResponse) response);
-            return;
+            boolean blocked = handleViolation(rule, "header", url, method, clientIp, (HttpServletResponse) response);
+            if (blocked) {
+                return;
+            }
         }
 
         rule = checkCookies(httpRequest);
         if (rule != null) {
-            handleViolation(rule, "cookie", url, method, clientIp, (HttpServletResponse) response);
-            return;
+            boolean blocked = handleViolation(rule, "cookie", url, method, clientIp, (HttpServletResponse) response);
+            if (blocked) {
+                return;
+            }
         }
 
         CachedBodyHttpServletRequest cachedRequest = new CachedBodyHttpServletRequest(httpRequest, maxBodySize);
         rule = checkRequestBody(cachedRequest);
         if (rule != null) {
-            handleViolation(rule, "body", url, method, clientIp, (HttpServletResponse) response);
-            return;
+            boolean blocked = handleViolation(rule, "body", url, method, clientIp, (HttpServletResponse) response);
+            if (blocked) {
+                return;
+            }
         }
 
         chain.doFilter(cachedRequest, response);
@@ -143,6 +158,10 @@ public class InputSecurityFilter implements Filter {
         }
         
         List<String> excludePaths = properties.getExcludePaths();
+        if (log.isDebugEnabled()) {
+            log.debug("shouldExclude check for URL: {}, excludePaths: {}", url, excludePaths);
+        }
+        
         if (excludePaths != null && !excludePaths.isEmpty()) {
             for (String excludePath : excludePaths) {
                 if (excludePath == null || excludePath.isEmpty()) {
@@ -151,6 +170,13 @@ public class InputSecurityFilter implements Filter {
                 // 精确匹配
                 if (url.equals(excludePath)) {
                     return true;
+                }
+                // 扩展名匹配 (/**.js, /**.css 等)
+                if (excludePath.startsWith("/**.")) {
+                    String ext = excludePath.substring(3);
+                    if (url.endsWith(ext)) {
+                        return true;
+                    }
                 }
                 // 前缀匹配（处理 /static/** 或 /static/ 的情况）
                 if (excludePath.endsWith("/**")) {
@@ -179,6 +205,13 @@ public class InputSecurityFilter implements Filter {
                 // 精确匹配
                 if (url.equals(includePath)) {
                     return false;
+                }
+                // 扩展名匹配 (/**.js, /**.css 等)
+                if (includePath.startsWith("/**.")) {
+                    String ext = includePath.substring(3);
+                    if (url.endsWith(ext)) {
+                        return false;
+                    }
                 }
                 // 前缀匹配（处理 /api/** 或 /api/ 的情况）
                 if (includePath.endsWith("/**")) {
@@ -272,6 +305,9 @@ public class InputSecurityFilter implements Filter {
             }
             String rule = ruleEngine.match(value);
             if (rule != null) {
+                if (isSsrfFalsePositiveHeader(name, rule)) {
+                    continue;
+                }
                 String clientIp = getClientIp(request);
                 // 记录详细日志
                 try {
@@ -389,7 +425,7 @@ public class InputSecurityFilter implements Filter {
      * @param clientIp 客户端 IP
      * @param response HTTP 响应对象
      */
-    private void handleViolation(String ruleName, String source, String url, String method, String clientIp, HttpServletResponse response)
+    private boolean handleViolation(String ruleName, String source, String url, String method, String clientIp, HttpServletResponse response)
             throws IOException {
         log.warn("Security violation detected - Rule: {}, Source: {}, IP: {}, URL: {}", ruleName, source, clientIp, url);
 
@@ -398,7 +434,20 @@ public class InputSecurityFilter implements Filter {
             response.setContentType("application/json;charset=UTF-8");
             String escapedRuleName = escapeJson(ruleName);
             response.getWriter().write("{\"error\":\"Input blocked by security rule: " + escapedRuleName + "\"}");
+            return true;
         }
+        return false;
+    }
+
+    private boolean isSsrfFalsePositiveHeader(String headerName, String ruleName) {
+        if (headerName == null || !"ssrf-attack".equalsIgnoreCase(ruleName)) {
+            return false;
+        }
+        String normalized = headerName.trim().toLowerCase();
+        return "referer".equals(normalized)
+                || "origin".equals(normalized)
+                || "host".equals(normalized)
+                || "user-agent".equals(normalized);
     }
     
     private String escapeJson(String str) {
