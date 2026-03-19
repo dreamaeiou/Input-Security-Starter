@@ -1,4 +1,4 @@
-﻿package org.example.input_security_starter.llm.provider.aliyun;
+package org.example.input_security_starter.llm.provider.aliyun;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
