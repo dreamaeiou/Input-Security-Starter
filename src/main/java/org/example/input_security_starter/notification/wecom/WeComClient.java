@@ -83,7 +83,15 @@ public class WeComClient {
         }
 
         if (useAppApi) {
-            return sendTextMessageViaAppApi(text);
+            boolean appApiSuccess = sendTextMessageViaAppApi(text);
+            if (appApiSuccess) {
+                return true;
+            }
+            if (hasWebhookConfigured()) {
+                log.warn("WeCom App API send failed, fallback to webhook");
+                return sendTextMessageViaWebhook(text);
+            }
+            return false;
         } else {
             return sendTextMessageViaWebhook(text);
         }
@@ -99,10 +107,22 @@ public class WeComClient {
         }
 
         if (useAppApi) {
-            return sendMarkdownMessageViaAppApi(content);
+            boolean appApiSuccess = sendMarkdownMessageViaAppApi(content);
+            if (appApiSuccess) {
+                return true;
+            }
+            if (hasWebhookConfigured()) {
+                log.warn("WeCom App API send failed, fallback to webhook");
+                return sendMarkdownMessageViaWebhook(content);
+            }
+            return false;
         } else {
             return sendMarkdownMessageViaWebhook(content);
         }
+    }
+
+    private boolean hasWebhookConfigured() {
+        return webhookUrl != null && !webhookUrl.isEmpty();
     }
 
     /**

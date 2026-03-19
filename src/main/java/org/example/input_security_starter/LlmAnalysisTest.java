@@ -22,6 +22,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.InputStream;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
@@ -33,6 +34,7 @@ import java.util.Properties;
 public class LlmAnalysisTest {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
+    private static final SimpleDateFormat REPORT_TIME_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
     public static void main(String[] args) {
         loadEnvFile();
@@ -372,7 +374,7 @@ public class LlmAnalysisTest {
         System.out.println("╚════════════════════════════════════════════════════════════════╝\n");
 
         System.out.println("报告 ID: " + report.getReportId());
-        System.out.println("分析时间: " + report.getAnalysisTime());
+        System.out.println("分析时间: " + (report.getAnalysisTime() == null ? "未知" : REPORT_TIME_FORMAT.format(report.getAnalysisTime())));
         System.out.println("告警数量: " + report.getAlertCount());
         System.out.println("IP 情报数: " + report.getIpIntelligenceCount());
         System.out.println("状态: " + report.getStatus());
@@ -387,7 +389,9 @@ public class LlmAnalysisTest {
         if (!report.getRecommendations().isEmpty()) {
             System.out.println("\n--- 防御建议 ---");
             for (int i = 0; i < report.getRecommendations().size(); i++) {
-                System.out.println((i + 1) + ". " + report.getRecommendations().get(i));
+                String recommendation = report.getRecommendations().get(i);
+                recommendation = recommendation == null ? "" : recommendation.trim().replaceAll("\\s+", " ");
+                System.out.println((i + 1) + ". " + recommendation);
             }
         }
 

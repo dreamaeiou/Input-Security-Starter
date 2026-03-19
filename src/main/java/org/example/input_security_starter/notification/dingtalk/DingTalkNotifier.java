@@ -205,7 +205,22 @@ public class DingTalkNotifier {
         if (intent == null) {
             return "未知";
         }
-        switch (intent.toLowerCase()) {
+        String normalized = intent.toLowerCase();
+        String[] candidates = normalized.split("[|,;/\\s]+");
+        for (String candidate : candidates) {
+            String mapped = mapIntentToken(candidate);
+            if (mapped != null) {
+                return mapped;
+            }
+        }
+        return intent;
+    }
+
+    private String mapIntentToken(String token) {
+        if (token == null || token.isEmpty()) {
+            return null;
+        }
+        switch (token) {
             case "reconnaissance":
                 return "侦察探测";
             case "exploitation":
@@ -215,7 +230,7 @@ public class DingTalkNotifier {
             case "exfiltration":
                 return "数据窃取";
             default:
-                return intent;
+                return null;
         }
     }
 

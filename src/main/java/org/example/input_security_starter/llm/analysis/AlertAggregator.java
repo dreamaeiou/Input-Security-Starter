@@ -21,6 +21,8 @@ public class AlertAggregator {
     private static final Logger log = LoggerFactory.getLogger(AlertAggregator.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    private static final int HIGH_RISK_THRESHOLD = 80;
+    private static final int MEDIUM_RISK_THRESHOLD = 50;
 
     private final int maxAlertsToAggregate;
     private final IpQueryService ipQueryService;
@@ -152,8 +154,9 @@ public class AlertAggregator {
                 aggregated.setIpIntelligence(ipIntelligence.get(entry.getKey()));
             }
             
-            int riskScore = calculateRiskScore(aggregated);
-            aggregated.setRiskScore(riskScore);
+            RiskScoreResult riskScoreResult = calculateRiskScore(aggregated);
+            aggregated.setRiskScore(riskScoreResult.finalScore);
+            aggregated.setRiskBreakdown(riskScoreResult.toMap());
             
             if (minTimestamp != Long.MAX_VALUE && maxTimestamp != Long.MIN_VALUE) {
                 AggregatedAlert.TimeRange timeRange = new AggregatedAlert.TimeRange(
@@ -189,43 +192,49 @@ public class AlertAggregator {
         return result;
     }
 
-    private int calculateRiskScore(AggregatedAlert aggregated) {
-        int score = 0;
+    private RiskScoreResult calculateRiskScore(AggregatedAlert aggregated) {
+        RiskScoreResult result = new RiskScoreResult();
         
         Map<String, Integer> attackWeights = new HashMap<>();
-        attackWeights.put("xss-attack", 10);
-        attackWeights.put("ldap-injection", 12);
-        attackWeights.put("ssrf-attack", 15);
-        attackWeights.put("path-traversal", 15);
-        attackWeights.put("sql-injection", 25);
-        attackWeights.put("nosql-injection", 25);
-        attackWeights.put("xxe-injection", 30);
-        attackWeights.put("template-injection", 35);
-        attackWeights.put("deserialization-attack", 45);
-        attackWeights.put("command-injection", 50);
-        attackWeights.put("code-execution", 55);
-        attackWeights.put("installation-attack", 70);
-        attackWeights.put("c2-communication", 80);
-        attackWeights.put("actions-on-objectives", 90);
+        attackWeights.put("port-scan", 2);
+        attackWeights.put("info-disclosure", 3);
+        attackWeights.put("directory-traversal-attempt", 6);
+        attackWeights.put("xss-attack", 8);
+        attackWeights.put("ldap-injection", 10);
+        attackWeights.put("ssrf-attack", 12);
+        attackWeights.put("path-traversal", 14);
+        attackWeights.put("sql-injection", 20);
+        attackWeights.put("nosql-injection", 20);
+        attackWeights.put("xxe-injection", 24);
+        attackWeights.put("template-injection", 28);
+        attackWeights.put("deserialization-attack", 32);
+        attackWeights.put("command-injection", 36);
+        attackWeights.put("code-execution", 40);
+        attackWeights.put("file-upload", 12);
+        attackWeights.put("installation-attack", 48);
+        attackWeights.put("c2-communication", 60);
+        attackWeights.put("actions-on-objectives", 70);
         
         int payloadScore = 0;
         for (Map.Entry<String, Integer> entry : aggregated.getAttackTypes().entrySet()) {
             String attackType = entry.getKey();
             int count = entry.getValue();
-            int weight = attackWeights.getOrDefault(attackType, 10);
-            payloadScore += weight * Math.min(count, 5);
+            int weight = attackWeights.getOrDefault(attackType, 6);
+            payloadScore += weight * Math.min(count, 3);
         }
-        score += payloadScore;
+        payloadScore = Math.min(payloadScore, 32);
+        result.payloadScore = payloadScore;
         
         int phaseScore = 0;
         Set<String> phases = aggregated.getAttackPhases();
-        if (phases.contains("reconnaissance")) phaseScore += 5;
-        if (phases.contains("delivery")) phaseScore += 10;
-        if (phases.contains("exploitation")) phaseScore += 20;
-        if (phases.contains("installation")) phaseScore += 30;
-        if (phases.contains("command_control")) phaseScore += 35;
-        if (phases.contains("actions")) phaseScore += 40;
-        score += phaseScore;
+        if (phases.contains("reconnaissance")) phaseScore += 4;
+        if (phases.contains("delivery")) phaseScore += 8;
+        if (phases.contains("exploitation")) phaseScore += 14;
+        if (phases.contains("installation")) phaseScore += 20;
+        if (phases.contains("command_control")) phaseScore += 24;
+        if (phases.contains("actions")) phaseScore += 28;
+        phaseScore = Math.min(phaseScore, 20);
+        result.phaseScore = phaseScore;
         
         int chainScore = 0;
         if (aggregated.getAttackChains() != null) {
@@ -233,13 +242,14 @@ public class AlertAggregator {
                 int fromOrder = getPhaseOrder(chain.getFromPhase());
                 int toOrder = getPhaseOrder(chain.getToPhase());
                 if (toOrder > fromOrder) {
-                    chainScore += 25;
+                    chainScore += 10;
                 } else if (toOrder == fromOrder) {
-                    chainScore += 5;
+                    chainScore += 3;
                 }
             }
         }
-        score += chainScore;
+        chainScore = Math.min(chainScore, 12);
+        result.chainScore = chainScore;
         
         int intelScore = 0;
         if (aggregated.getIpIntelligence() != null) {
@@ -247,48 +257,238 @@ public class AlertAggregator {
             int abuseScore = intel.getAbuseConfidenceScore();
             
             if (abuseScore >= 75) {
-                intelScore += 5;
+                intelScore += 18;
             } else if (abuseScore >= 50) {
-                intelScore += 10;
+                intelScore += 12;
             } else if (abuseScore >= 25) {
-                intelScore += 15;
-            } else if (abuseScore < 20 && abuseScore > 0) {
-                intelScore += 25;
+                intelScore += 7;
+            } else if (abuseScore > 0) {
+                intelScore += 3;
             }
             
             if (intel.isTor()) {
-                intelScore += 15;
+                intelScore += 8;
             }
             
             if (intel.getUsageType() != null) {
                 String usage = intel.getUsageType().toLowerCase();
                 if (usage.contains("data center") || usage.contains("hosting")) {
-                    intelScore += 10;
+                    intelScore += 2;
                 }
             }
+
+            int totalReports = intel.getTotalReports();
+            if (totalReports >= 30) {
+                intelScore += 4;
+            } else if (totalReports >= 10) {
+                intelScore += 2;
+            } else if (totalReports > 0) {
+                intelScore += 1;
+            }
         }
-        score += intelScore;
+        intelScore = Math.min(intelScore, 16);
+        result.intelScore = intelScore;
         
         int behaviorScore = 0;
         int totalEvents = aggregated.getTotalEvents();
         if (totalEvents > 50) {
-            behaviorScore += 15;
-        } else if (totalEvents > 20) {
             behaviorScore += 10;
+        } else if (totalEvents > 20) {
+            behaviorScore += 6;
         } else if (totalEvents > 10) {
-            behaviorScore += 5;
+            behaviorScore += 3;
         }
         
         int distinctAttackTypes = aggregated.getAttackTypes().size();
         if (distinctAttackTypes >= 4) {
-            behaviorScore += 20;
+            behaviorScore += 8;
         } else if (distinctAttackTypes >= 2) {
-            behaviorScore += 10;
+            behaviorScore += 4;
         }
+        behaviorScore = Math.min(behaviorScore, 12);
         
-        score += behaviorScore;
-        
-        return Math.min(score, 100);
+        result.behaviorScore = behaviorScore;
+
+        int rawScore = payloadScore + phaseScore + chainScore + intelScore + behaviorScore;
+        result.rawScore = rawScore;
+
+        boolean hasExploitationEvidence = hasExploitationEvidence(aggregated);
+        boolean hasCriticalEvidence = hasCriticalEvidence(aggregated);
+        boolean weakReputation = isWeakReputation(aggregated.getIpIntelligence());
+        result.hasExploitationEvidence = hasExploitationEvidence;
+        result.hasCriticalEvidence = hasCriticalEvidence;
+        result.weakReputation = weakReputation;
+
+        int finalScore = rawScore;
+
+        // 无利用证据时，不允许风险分轻易封顶，降低“全是100分”的噪声。
+        if (!hasExploitationEvidence) {
+            finalScore = Math.min(finalScore, 75);
+            result.capReason = "no_exploitation_evidence";
+        }
+
+        // 情报可信度弱且缺少利用证据时进一步降权，避免“Abuse=0仍冲高”。
+        if (weakReputation && !hasExploitationEvidence) {
+            finalScore = Math.max(0, finalScore - 8);
+            if (result.capReason == null) {
+                result.capReason = "weak_reputation_no_exploitation";
+            }
+        }
+
+        // 有利用证据但缺少“高置信高破坏”证据时，不应轻易进入90+。
+        if (hasExploitationEvidence && !hasCriticalEvidence) {
+            finalScore = Math.min(finalScore, 89);
+            if (result.capReason == null) {
+                result.capReason = "no_critical_evidence";
+            }
+        }
+
+        // 内网/保留网段默认不按互联网外部攻击源对待，避免比赛样例误导。
+        if (isNonRoutableOrDocumentationIp(aggregated.getIp())) {
+            finalScore = Math.min(finalScore, 78);
+            finalScore = Math.max(0, finalScore - 8);
+            result.nonRoutableIp = true;
+            if (result.capReason == null) {
+                result.capReason = "non_routable_or_doc_ip";
+            }
+        }
+
+        result.finalScore = Math.min(finalScore, 100);
+        return result;
+    }
+
+    private boolean hasExploitationEvidence(AggregatedAlert aggregated) {
+        if (aggregated == null) {
+            return false;
+        }
+
+        Set<String> phases = aggregated.getAttackPhases();
+        if (phases != null && (phases.contains("exploitation")
+                || phases.contains("installation")
+                || phases.contains("command_control")
+                || phases.contains("actions"))) {
+            return true;
+        }
+
+        for (String type : aggregated.getAttackTypes().keySet()) {
+            String t = type == null ? "" : type.toLowerCase();
+            if (t.contains("sql-injection")
+                    || t.contains("nosql-injection")
+                    || t.contains("template-injection")
+                    || t.contains("command-injection")
+                    || t.contains("code-execution")
+                    || t.contains("deserialization")
+                    || t.contains("xxe-injection")
+                    || t.contains("installation-attack")
+                    || t.contains("c2-communication")
+                    || t.contains("actions-on-objectives")) {
+                return true;
+            }
+        }
+
+        for (AggregatedAlert.AttackChainSummary chain : aggregated.getAttackChains()) {
+            int toOrder = getPhaseOrder(chain.getToPhase());
+            if (toOrder >= 3) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private boolean isWeakReputation(AbuseIpDbClient.IpIntelligence intel) {
+        if (intel == null) {
+            return true;
+        }
+
+        boolean zeroAbuse = intel.getAbuseConfidenceScore() <= 0;
+        boolean zeroReports = intel.getTotalReports() <= 0;
+        boolean nonTor = !intel.isTor();
+        return zeroAbuse && zeroReports && nonTor;
+    }
+
+    private boolean hasCriticalEvidence(AggregatedAlert aggregated) {
+        if (aggregated == null) {
+            return false;
+        }
+        Set<String> phases = aggregated.getAttackPhases();
+        if (phases != null && (phases.contains("installation")
+                || phases.contains("command_control")
+                || phases.contains("actions"))) {
+            return true;
+        }
+        for (String type : aggregated.getAttackTypes().keySet()) {
+            String t = type == null ? "" : type.toLowerCase();
+            if (t.contains("code-execution")
+                    || t.contains("command-injection")
+                    || t.contains("deserialization")
+                    || t.contains("installation-attack")
+                    || t.contains("c2-communication")
+                    || t.contains("actions-on-objectives")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isNonRoutableOrDocumentationIp(String ip) {
+        if (ip == null) {
+            return false;
+        }
+        String[] parts = ip.split("\\.");
+        if (parts.length != 4) {
+            return false;
+        }
+        int first;
+        int second;
+        try {
+            first = Integer.parseInt(parts[0]);
+            second = Integer.parseInt(parts[1]);
+        } catch (NumberFormatException e) {
+            return false;
+        }
+        return ip.startsWith("10.")
+            || ip.startsWith("127.")
+            || ip.startsWith("169.254.")
+            || ip.startsWith("192.168.")
+            || (first == 172 && second >= 16 && second <= 31)
+            || ip.startsWith("192.0.2.")
+            || ip.startsWith("198.51.100.")
+            || ip.startsWith("203.0.113.");
+    }
+
+    private static class RiskScoreResult {
+        private int payloadScore;
+        private int phaseScore;
+        private int chainScore;
+        private int intelScore;
+        private int behaviorScore;
+        private int rawScore;
+        private int finalScore;
+        private boolean hasExploitationEvidence;
+        private boolean hasCriticalEvidence;
+        private boolean weakReputation;
+        private boolean nonRoutableIp;
+        private String capReason;
+
+        private Map<String, Object> toMap() {
+            Map<String, Object> map = new HashMap<>();
+            map.put("payload_score", payloadScore);
+            map.put("phase_score", phaseScore);
+            map.put("chain_score", chainScore);
+            map.put("intel_score", intelScore);
+            map.put("behavior_score", behaviorScore);
+            map.put("raw_score", rawScore);
+            map.put("final_score", finalScore);
+            map.put("has_exploitation_evidence", hasExploitationEvidence);
+            map.put("has_critical_evidence", hasCriticalEvidence);
+            map.put("weak_reputation", weakReputation);
+            map.put("non_routable_ip", nonRoutableIp);
+            if (capReason != null) {
+                map.put("cap_reason", capReason);
+            }
+            return map;
+        }
     }
     
     private int getPhaseOrder(String phase) {
@@ -354,8 +554,8 @@ public class AlertAggregator {
             int mediumRiskCount = 0;
             int lowRiskCount = 0;
             for (AggregatedAlert alert : aggregatedAlerts) {
-                if (alert.getRiskScore() >= 70) highRiskCount++;
-                else if (alert.getRiskScore() >= 40) mediumRiskCount++;
+                if (alert.getRiskScore() >= HIGH_RISK_THRESHOLD) highRiskCount++;
+                else if (alert.getRiskScore() >= MEDIUM_RISK_THRESHOLD) mediumRiskCount++;
                 else lowRiskCount++;
             }
             summary.put("high_risk_ips", highRiskCount);

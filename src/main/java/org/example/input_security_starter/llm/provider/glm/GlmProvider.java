@@ -1,4 +1,4 @@
-package org.example.input_security_starter.llm.provider.glm;
+﻿package org.example.input_security_starter.llm.provider.glm;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -107,25 +107,35 @@ public class GlmProvider implements LlmProvider {
 
     private String buildAggregatedAnalysisPrompt(String aggregatedJson) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("你是企业SOC高级分析师。请仅基于输入数据输出中文报告，不要输出英文。\n");
-        prompt.append("必须严格使用以下Markdown结构，且每个标题只出现一次：\n");
-        prompt.append("### 执行摘要\n");
-        prompt.append("### 攻击活动画像\n");
-        prompt.append("### 攻击链分析\n");
-        prompt.append("### 防御建议\n");
-        prompt.append("\n");
-        prompt.append("约束：\n");
-        prompt.append("1) 只引用输入中的事实，禁止臆测。\n");
-        prompt.append("2) 防御建议只给5条，使用编号1-5。\n");
-        prompt.append("3) 每条防御建议必须具体到动作与对象，格式建议为 [BLOCK]/[PATCH]/[MONITOR]/[REVIEW]/[TRAIN]。\n");
-        prompt.append("4) 不要重复段落，不要重复建议。\n\n");
-        prompt.append("聚合数据JSON：\n```json\n");
+        prompt.append("You are an enterprise SOC analyst. Analyze only from the provided JSON facts.\n");
+        prompt.append("Output rules:\n");
+        prompt.append("1) Return exactly one JSON object, no markdown fences, no extra text.\n");
+        prompt.append("2) All human-readable strings must be Simplified Chinese.\n");
+        prompt.append("3) Do not fabricate assets, timelines, counts, or indicators.\n");
+        prompt.append("Required schema:\n");
+        prompt.append("{\n");
+        prompt.append("  \\\"summary\\\": \\\"80-220字，必须包含统计事实\\\",\n");
+        prompt.append("  \\\"risk_score\\\": 0,\n");
+        prompt.append("  \\\"risk_level\\\": \\\"low|medium|high\\\",\n");
+        prompt.append("  \\\"attack_narrative\\\": \\\"必须包含攻击阶段、攻击类型、目标URL和结论\\\",\n");
+        prompt.append("  \\\"attack_phases\\\": [\\\"最多6项\\\"],\n");
+        prompt.append("  \\\"attack_types\\\": [\\\"最多8项\\\"],\n");
+        prompt.append("  \\\"target_urls\\\": [\\\"最多8项\\\"],\n");
+        prompt.append("  \\\"recommendations\\\": [\\\"固定5条，必须以[BLOCK]/[PATCH]/[MONITOR]/[REVIEW]/[IR]开头\\\"],\n");
+        prompt.append("  \\\"verdict\\\": {\\\"is_attack\\\": true, \\\"confidence\\\": 0.0-1.0, \\\"classification\\\": \\\"...\\\"},\n");
+        prompt.append("  \\\"attacker\\\": {\\\"skill_level\\\": \\\"novice|intermediate|advanced\\\", \\\"automation\\\": \\\"manual|semi_auto|fully_auto\\\", \\\"intent\\\": \\\"reconnaissance|exploitation|exfiltration|lateral_movement\\\"},\n");
+        prompt.append("  \\\"key_indicators\\\": [\\\"最多10项，优先公网IP、攻击类型、目标URL\\\"]\n");
+        prompt.append("}\n");
+        prompt.append("Constraints:\n");
+        prompt.append("- If a fact is unavailable, use \\\"未知\\\".\n");
+        prompt.append("- Recommendations must map to observed attack types or target URLs.\n");
+        prompt.append("- Prefer public routable IPs in key_indicators when available.\n\n");
+        prompt.append("Input aggregated JSON:\n");
         prompt.append(aggregatedJson);
-        prompt.append("\n```\n");
+        prompt.append("\n");
         return prompt.toString();
     }
-
-    @SuppressWarnings("unchecked")
+@SuppressWarnings("unchecked")
     private String buildAnalysisPrompt(List<String> alertLogs, Map<String, Object> ipIntelligence) {
         StringBuilder prompt = new StringBuilder();
         prompt.append("You are a SOC analyst. Analyze attack-chain alerts and provide a concise investigation report.\n");
@@ -391,3 +401,4 @@ public class GlmProvider implements LlmProvider {
         }
     }
 }
+

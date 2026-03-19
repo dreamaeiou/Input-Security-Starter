@@ -19,6 +19,7 @@ public class AggregatedAlert {
     private Map<String, Integer> attackTypes;
     private TimeRange timeRange;
     private int riskScore;
+    private Map<String, Object> riskBreakdown;
     private List<String> topPayloads;
     private List<AttackChainSummary> attackChains;
     private Set<String> targetUrls;
@@ -80,6 +81,9 @@ public class AggregatedAlert {
         }
         
         result.put("risk_score", riskScore);
+        if (riskBreakdown != null && !riskBreakdown.isEmpty()) {
+            result.put("risk_breakdown", riskBreakdown);
+        }
         
         if (!topPayloads.isEmpty()) {
             result.put("top_payloads", topPayloads.size() > 5 ? topPayloads.subList(0, 5) : topPayloads);
@@ -158,6 +162,9 @@ public class AggregatedAlert {
     
     public int getRiskScore() { return riskScore; }
     public void setRiskScore(int riskScore) { this.riskScore = riskScore; }
+
+    public Map<String, Object> getRiskBreakdown() { return riskBreakdown; }
+    public void setRiskBreakdown(Map<String, Object> riskBreakdown) { this.riskBreakdown = riskBreakdown; }
     
     public List<String> getTopPayloads() { return topPayloads; }
     public void addPayload(String payload) {
