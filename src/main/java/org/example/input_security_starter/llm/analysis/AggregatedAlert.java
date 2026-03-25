@@ -38,6 +38,7 @@ public class AggregatedAlert {
     private long lastSeenTs;
     private String threatLevel;
     private Set<String> relatedIps;
+    private List<PeerAttacker> peerAttackers;
 
     public AggregatedAlert() {
         this.attackPhases = new HashSet<>();
@@ -51,6 +52,7 @@ public class AggregatedAlert {
         this.paramNames = new HashSet<>();
         this.errorMessages = new HashSet<>();
         this.relatedIps = new HashSet<>();
+        this.peerAttackers = new ArrayList<>();
     }
 
     public Map<String, Object> toMap() {
@@ -163,7 +165,17 @@ public class AggregatedAlert {
             result.put("profile_context", profileContext);
         }
 
-        if (!relatedIps.isEmpty()) {
+        if (!peerAttackers.isEmpty()) {
+            List<Map<String, Object>> peerList = new ArrayList<>();
+            for (PeerAttacker peer : peerAttackers) {
+                Map<String, Object> peerMap = new HashMap<>();
+                peerMap.put("ip", peer.getIp());
+                peerMap.put("relationship", peer.getRelationship());
+                peerMap.put("confidence", peer.getConfidence());
+                peerList.add(peerMap);
+            }
+            result.put("peer_attackers", peerList);
+        } else if (!relatedIps.isEmpty()) {
             result.put("related_ips", new ArrayList<>(relatedIps));
         }
         
@@ -278,6 +290,49 @@ public class AggregatedAlert {
         if (relatedIp != null && !relatedIp.trim().isEmpty()) {
             this.relatedIps.add(relatedIp.trim());
         }
+    }
+
+    public List<PeerAttacker> getPeerAttackers() { return peerAttackers; }
+
+    public void setPeerAttackers(List<PeerAttacker> peerAttackers) {
+        this.peerAttackers = peerAttackers != null ? peerAttackers : new ArrayList<>();
+    }
+
+    public void addPeerAttacker(PeerAttacker peerAttacker) {
+        if (peerAttacker != null) {
+            this.peerAttackers.add(peerAttacker);
+        }
+    }
+
+    public static class PeerAttacker {
+        private String ip;
+        private String relationship;
+        private double confidence;
+        private String relatedToIp;
+
+        public PeerAttacker() {}
+
+        public PeerAttacker(String ip, String relationship, double confidence) {
+            this.ip = ip;
+            this.relationship = relationship;
+            this.confidence = confidence;
+        }
+
+        public PeerAttacker(String ip, String relationship, double confidence, String relatedToIp) {
+            this.ip = ip;
+            this.relationship = relationship;
+            this.confidence = confidence;
+            this.relatedToIp = relatedToIp;
+        }
+
+        public String getIp() { return ip; }
+        public void setIp(String ip) { this.ip = ip; }
+        public String getRelationship() { return relationship; }
+        public void setRelationship(String relationship) { this.relationship = relationship; }
+        public double getConfidence() { return confidence; }
+        public void setConfidence(double confidence) { this.confidence = confidence; }
+        public String getRelatedToIp() { return relatedToIp; }
+        public void setRelatedToIp(String relatedToIp) { this.relatedToIp = relatedToIp; }
     }
 
     public static class TimeRange {

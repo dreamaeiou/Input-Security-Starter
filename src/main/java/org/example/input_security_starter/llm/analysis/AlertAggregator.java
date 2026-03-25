@@ -175,10 +175,31 @@ public class AlertAggregator {
                 }
 
                 if (root.has("related_attackers") && root.get("related_attackers").isArray()) {
+                    Map<String, AggregatedAlert.PeerAttacker> peerMap = new HashMap<>();
                     for (JsonNode related : root.get("related_attackers")) {
                         if (related.has("ip")) {
-                            aggregated.addRelatedIp(related.get("ip").asText());
+                            String peerIp = related.get("ip").asText();
+                            double similarity = 0.5;
+                            if (related.has("similarity")) {
+                                similarity = readDouble(related.get("similarity"), 0.5);
+                            }
+                            String primaryReason = "unknown";
+                            if (related.has("reasons") && related.get("reasons").isArray()) {
+                                for (JsonNode reason : related.get("reasons")) {
+                                    if (reason.isTextual()) {
+                                        primaryReason = reason.asText();
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!peerMap.containsKey(peerIp)) {
+                                AggregatedAlert.PeerAttacker peer = new AggregatedAlert.PeerAttacker(peerIp, primaryReason, similarity, clientIp);
+                                peerMap.put(peerIp, peer);
+                            }
                         }
+                    }
+                    for (AggregatedAlert.PeerAttacker peer : peerMap.values()) {
+                        aggregated.addPeerAttacker(peer);
                     }
                 }
                 
@@ -216,8 +237,16 @@ public class AlertAggregator {
         List<AggregatedAlert> aggregatedList = new ArrayList<>(ipAggregations.values());
         aggregatedList.sort((a, b) -> Integer.compare(b.getRiskScore(), a.getRiskScore()));
 
+        List<AggregatedAlert.PeerAttacker> allPeerAttackers = new ArrayList<>();
+        for (AggregatedAlert alert : aggregatedList) {
+            for (AggregatedAlert.PeerAttacker peer : alert.getPeerAttackers()) {
+                allPeerAttackers.add(peer);
+            }
+        }
+
         AggregationResult result = new AggregationResult();
         result.setAggregatedAlerts(aggregatedList);
+        result.setAllPeerAttackers(allPeerAttackers);
         result.setTotalIps(allIps.size());
         result.setTotalSessions(totalSessions);
         result.setTotalEvents(totalEvents);
@@ -260,6 +289,20 @@ public class AlertAggregator {
         }
         try {
             return Long.parseLong(node.asText().trim());
+        } catch (Exception e) {
+            return defaultValue;
+        }
+    }
+
+    private double readDouble(JsonNode node, double defaultValue) {
+        if (node == null || node.isNull()) {
+            return defaultValue;
+        }
+        if (node.isNumber()) {
+            return node.asDouble(defaultValue);
+        }
+        try {
+            return Double.parseDouble(node.asText().trim());
         } catch (Exception e) {
             return defaultValue;
         }
@@ -582,6 +625,7 @@ public class AlertAggregator {
 
     public static class AggregationResult {
         private List<AggregatedAlert> aggregatedAlerts;
+        private List<AggregatedAlert.PeerAttacker> allPeerAttackers;
         private int totalIps;
         private int totalSessions;
         private int totalEvents;
@@ -592,19 +636,38 @@ public class AlertAggregator {
 
         public AggregationResult() {
             this.aggregatedAlerts = new ArrayList<>();
+            this.allPeerAttackers = new ArrayList<>();
         }
 
         public Map<String, Object> toMap() {
             Map<String, Object> result = new HashMap<>();
-            
+
             result.put("summary", createSummary());
-            
+
             List<Map<String, Object>> alertsList = new ArrayList<>();
             for (AggregatedAlert alert : aggregatedAlerts) {
                 alertsList.add(alert.toMap());
             }
             result.put("aggregated_alerts", alertsList);
-            
+
+            if (!allPeerAttackers.isEmpty()) {
+                List<Map<String, Object>> peerList = new ArrayList<>();
+                Set<String> seenIps = new HashSet<>();
+                for (AggregatedAlert.PeerAttacker peer : allPeerAttackers) {
+                    if (seenIps.add(peer.getIp())) {
+                        Map<String, Object> peerMap = new HashMap<>();
+                        peerMap.put("ip", peer.getIp());
+                        peerMap.put("relationship", peer.getRelationship());
+                        peerMap.put("confidence", peer.getConfidence());
+                        if (peer.getRelatedToIp() != null) {
+                            peerMap.put("related_to", peer.getRelatedToIp());
+                        }
+                        peerList.add(peerMap);
+                    }
+                }
+                result.put("peer_attackers", peerList);
+            }
+
             return result;
         }
 
@@ -654,5 +717,7 @@ public class AlertAggregator {
         public void setStartTime(String startTime) { this.startTime = startTime; }
         public String getEndTime() { return endTime; }
         public void setEndTime(String endTime) { this.endTime = endTime; }
+        public List<AggregatedAlert.PeerAttacker> getAllPeerAttackers() { return allPeerAttackers; }
+        public void setAllPeerAttackers(List<AggregatedAlert.PeerAttacker> allPeerAttackers) { this.allPeerAttackers = allPeerAttackers; }
     }
 }

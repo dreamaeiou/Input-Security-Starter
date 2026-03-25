@@ -48,6 +48,8 @@ public class LlmAnalysisService {
     private static final int DEFAULT_MAX_PROMPT_CHARS = 24_000;
     private static final int DEFAULT_MAX_IPS_PER_ANALYSIS = 50;
     private static final int DEFAULT_MAX_EVENTS_PER_IP = 50;
+    private static final int HIGH_RISK_THRESHOLD = 80;
+    private static final int MEDIUM_RISK_THRESHOLD = 50;
     private static final long DEFAULT_ANALYSIS_TIMEOUT_MS = 90_000L;
     private static final String[] SUMMARY_SECTION_START_MARKERS = new String[]{
         "### \u6267\u884c\u6458\u8981",
@@ -866,6 +868,7 @@ public class LlmAnalysisService {
                 String ip = null;
                 String relationship = null;
                 double confidence = 0.0;
+                String relatedToIp = null;
                 if (item.isObject()) {
                     ip = readText(item, "ip");
                     if (!isNotBlank(ip)) {
@@ -879,6 +882,7 @@ public class LlmAnalysisService {
                     if (confidence < 0) {
                         confidence = readDouble(item, "similarity", 0.0);
                     }
+                    relatedToIp = readText(item, "related_to");
                 } else {
                     ip = item.asText();
                     relationship = "unknown";
@@ -892,7 +896,7 @@ public class LlmAnalysisService {
                 double normalizedConfidence = Math.max(0.0, Math.min(1.0, confidence));
                 String dedupeKey = normalizedIp + "|" + normalizedRelationship;
                 if (seen.add(dedupeKey)) {
-                    values.add(new AnalysisReport.PeerAttacker(normalizedIp, normalizedRelationship, normalizedConfidence));
+                    values.add(new AnalysisReport.PeerAttacker(normalizedIp, normalizedRelationship, normalizedConfidence, relatedToIp));
                 }
             }
             return values;
@@ -1146,6 +1150,11 @@ public class LlmAnalysisService {
         Map<String, Integer> attackTypeCounter = new HashMap<String, Integer>();
         LinkedHashSet<String> targetUrlSet = new LinkedHashSet<String>();
         LinkedHashSet<String> publicIpSet = new LinkedHashSet<String>();
+        LinkedHashSet<String> payloadSamples = new LinkedHashSet<String>();
+        Map<Integer, Integer> statusCodeDistribution = new HashMap<Integer, Integer>();
+        int successEvents = 0;
+        int statusEvents = 0;
+        List<AnalysisReport.SourceDetail> topSources = new ArrayList<AnalysisReport.SourceDetail>();
 
         for (AggregatedAlert alert : alerts) {
             if (alert == null) {
@@ -1153,9 +1162,9 @@ public class LlmAnalysisService {
             }
             int risk = alert.getRiskScore();
             maxRisk = Math.max(maxRisk, risk);
-            if (risk >= 70) {
+            if (risk >= HIGH_RISK_THRESHOLD) {
                 highRisk++;
-            } else if (risk >= 40) {
+            } else if (risk >= MEDIUM_RISK_THRESHOLD) {
                 mediumRisk++;
             } else {
                 lowRisk++;
@@ -1189,6 +1198,50 @@ public class LlmAnalysisService {
                     }
                 }
             }
+            if (alert.getTopPayloads() != null) {
+                for (String payload : alert.getTopPayloads()) {
+                    if (payloadSamples.size() >= 8) {
+                        break;
+                    }
+                    String sanitized = sanitizePayloadSample(payload);
+                    if (isNotBlank(sanitized)) {
+                        payloadSamples.add(sanitized);
+                    }
+                }
+            }
+            if (alert.getStatusCodes() != null) {
+                for (Map.Entry<Integer, Integer> statusEntry : alert.getStatusCodes().entrySet()) {
+                    Integer code = statusEntry.getKey();
+                    int count = statusEntry.getValue() == null ? 0 : statusEntry.getValue();
+                    if (code == null || count <= 0 || !isStandardHttpStatusCode(code)) {
+                        continue;
+                    }
+                    statusCodeDistribution.put(code, statusCodeDistribution.getOrDefault(code, 0) + count);
+                    statusEvents += count;
+                    if (code >= 200 && code < 300) {
+                        successEvents += count;
+                    }
+                }
+            }
+
+            AnalysisReport.SourceDetail sourceDetail = new AnalysisReport.SourceDetail();
+            sourceDetail.setIp(alert.getIp());
+            sourceDetail.setRiskScore(alert.getRiskScore());
+            sourceDetail.setPrimaryAttackType(pickPrimaryAttackType(alert.getAttackTypes()));
+            sourceDetail.setSessionCount(alert.getSessionCount());
+            sourceDetail.setTotalEvents(alert.getTotalEvents());
+            int sourceEventTotal = alert.getSuccessCount() + alert.getFailureCount();
+            if (sourceEventTotal > 0) {
+                sourceDetail.setSuccessRate(Math.round((alert.getSuccessCount() * 10000.0) / sourceEventTotal) / 100.0);
+            }
+            sourceDetail.setAsn(alert.getAsn());
+            sourceDetail.setCountry(alert.getCountry());
+            sourceDetail.setIsp(alert.getIsp());
+            sourceDetail.setThreatLevel(alert.getThreatLevel());
+            sourceDetail.setProfileAttackCount(alert.getProfileAttackCount());
+            sourceDetail.setFirstSeenTs(alert.getFirstSeenTs());
+            sourceDetail.setLastSeenTs(alert.getLastSeenTs());
+            topSources.add(sourceDetail);
         }
 
         List<String> topAttackTypes = pickTopAttackTypes(attackTypeCounter, 5);
@@ -1200,12 +1253,57 @@ public class LlmAnalysisService {
             }
         }
         List<String> publicIps = new ArrayList<String>(publicIpSet);
+        List<AnalysisReport.AttackType> attackTypes = buildAttackTypeViews(attackTypeCounter, maxRisk);
+        if (!topSources.isEmpty()) {
+            Collections.sort(topSources, new Comparator<AnalysisReport.SourceDetail>() {
+                @Override
+                public int compare(AnalysisReport.SourceDetail a, AnalysisReport.SourceDetail b) {
+                    return Integer.compare(b.getRiskScore(), a.getRiskScore());
+                }
+            });
+            if (topSources.size() > 8) {
+                topSources = new ArrayList<AnalysisReport.SourceDetail>(topSources.subList(0, 8));
+            }
+        }
 
         report.setKeyIndicators(selectKeyIndicators(report.getKeyIndicators(), publicIps, topAttackTypes, topTargetUrls));
         report.setSummary(buildQuantifiedSummary(report, aggregationResult, highRisk, mediumRisk, lowRisk, maxRisk));
         report.setAttackNarrative(buildContextNarrative(report, phaseSet, topAttackTypes, topTargetUrls));
         report.setRecommendations(buildContextAwareRecommendations(report, topAttackTypes, topTargetUrls, publicIps, maxRisk));
         report.setAttackerSkillLevel(calibrateSkillLevel(phaseSet, topAttackTypes, maxRisk));
+        report.setWindowStart(aggregationResult.getStartTime());
+        report.setWindowEnd(aggregationResult.getEndTime());
+        report.setOriginalAlertCount(aggregationResult.getOriginalAlerts());
+        report.setTotalIps(aggregationResult.getTotalIps());
+        report.setHighRiskIps(highRisk);
+        report.setMediumRiskIps(mediumRisk);
+        report.setLowRiskIps(lowRisk);
+        report.setTopAttackTypes(topAttackTypes);
+        report.setTopTargetUrls(topTargetUrls);
+        report.setTopSources(topSources);
+        if (!payloadSamples.isEmpty()) {
+            report.setPayloadSamples(new ArrayList<String>(payloadSamples));
+        }
+        if (!statusCodeDistribution.isEmpty()) {
+            report.setStatusCodeDistribution(statusCodeDistribution);
+        }
+        if (statusEvents > 0) {
+            report.setOverallSuccessRate(Math.round((successEvents * 10000.0) / statusEvents) / 100.0);
+        }
+        if (report.getAttackTypes() == null || report.getAttackTypes().isEmpty()) {
+            report.setAttackTypes(attackTypes);
+        }
+        if (report.getAffectedAssets() == null || report.getAffectedAssets().isEmpty()) {
+            report.setAffectedAssets(new ArrayList<String>(topTargetUrls));
+        }
+        if (!topSources.isEmpty() && isNotBlank(topSources.get(0).getIp())) {
+            report.setMainAttackerIp(topSources.get(0).getIp());
+        }
+        if ((report.getPeerAttackers() == null || report.getPeerAttackers().isEmpty())
+            && aggregationResult.getAllPeerAttackers() != null
+            && !aggregationResult.getAllPeerAttackers().isEmpty()) {
+            report.setPeerAttackers(convertPeerAttackers(aggregationResult.getAllPeerAttackers(), 12));
+        }
     }
 
     private void applyRecommendationQualityGuard(
@@ -1369,7 +1467,7 @@ public class LlmAnalysisService {
         actionMap.put("[PATCH]", buildPatchRecommendation(topAttackTypes, topTargetUrls));
         actionMap.put("[MONITOR]", buildMonitorRecommendation(topAttackTypes, topTargetUrls));
         actionMap.put("[REVIEW]", buildReviewRecommendation(topAttackTypes, topTargetUrls));
-        if (report.isAttackDetected() || maxRisk >= 70) {
+        if (report.isAttackDetected() || maxRisk >= HIGH_RISK_THRESHOLD) {
             actionMap.put("[IR]", "[IR] \u542f\u52a8\u5e94\u6025\u54cd\u5e94\u6d41\u7a0b\uff0c\u56fa\u5316\u53d6\u8bc1\u8bc1\u636e\u5e76\u8ddf\u8fdb\u8d26\u53f7/\u8d44\u4ea7\u7ea7\u522b\u6392\u67e5");
         } else {
             actionMap.put("[IR]", "[IR] \u5efa\u7acb\u4e8b\u4ef6\u590d\u76d8\u548c\u54cd\u5e94\u9884\u6848\uff0c\u786e\u4fdd\u9ad8\u98ce\u9669\u6307\u6807\u51fa\u73b0\u65f6\u53ef\u5feb\u901f\u5347\u7ea7");
@@ -1527,6 +1625,96 @@ public class LlmAnalysisService {
         return out;
     }
 
+    private List<AnalysisReport.AttackType> buildAttackTypeViews(Map<String, Integer> counter, int maxRisk) {
+        List<AnalysisReport.AttackType> out = new ArrayList<AnalysisReport.AttackType>();
+        if (counter == null || counter.isEmpty()) {
+            return out;
+        }
+        List<Map.Entry<String, Integer>> entries = new ArrayList<Map.Entry<String, Integer>>(counter.entrySet());
+        Collections.sort(entries, new Comparator<Map.Entry<String, Integer>>() {
+            @Override
+            public int compare(Map.Entry<String, Integer> a, Map.Entry<String, Integer> b) {
+                return Integer.compare(b.getValue(), a.getValue());
+            }
+        });
+        String severity = maxRisk >= HIGH_RISK_THRESHOLD ? "high" : (maxRisk >= MEDIUM_RISK_THRESHOLD ? "medium" : "low");
+        int limit = Math.min(6, entries.size());
+        for (int i = 0; i < limit; i++) {
+            Map.Entry<String, Integer> entry = entries.get(i);
+            out.add(new AnalysisReport.AttackType(
+                entry.getKey(),
+                "observed " + entry.getValue() + " events",
+                entry.getValue(),
+                severity
+            ));
+        }
+        return out;
+    }
+
+    private String pickPrimaryAttackType(Map<String, Integer> attackTypes) {
+        if (attackTypes == null || attackTypes.isEmpty()) {
+            return null;
+        }
+        String best = null;
+        int bestCount = -1;
+        for (Map.Entry<String, Integer> entry : attackTypes.entrySet()) {
+            if (!isNotBlank(entry.getKey())) {
+                continue;
+            }
+            int count = entry.getValue() == null ? 0 : entry.getValue();
+            if (count > bestCount) {
+                best = entry.getKey();
+                bestCount = count;
+            }
+        }
+        return best;
+    }
+
+    private String sanitizePayloadSample(String payload) {
+        if (!isNotBlank(payload)) {
+            return null;
+        }
+        String compact = payload.trim().replaceAll("\\s+", " ");
+        if (compact.length() <= 48) {
+            return compact;
+        }
+        int head = 22;
+        int tail = 18;
+        return compact.substring(0, head) + "...[masked]..." + compact.substring(compact.length() - tail);
+    }
+
+    private boolean isStandardHttpStatusCode(int code) {
+        return code >= 100 && code <= 599;
+    }
+
+    private List<AnalysisReport.PeerAttacker> convertPeerAttackers(
+        List<AggregatedAlert.PeerAttacker> source,
+        int limit
+    ) {
+        List<AnalysisReport.PeerAttacker> out = new ArrayList<AnalysisReport.PeerAttacker>();
+        if (source == null || source.isEmpty() || limit <= 0) {
+            return out;
+        }
+        LinkedHashSet<String> dedupe = new LinkedHashSet<String>();
+        for (AggregatedAlert.PeerAttacker peer : source) {
+            if (peer == null || !isNotBlank(peer.getIp())) {
+                continue;
+            }
+            String relationship = isNotBlank(peer.getRelationship()) ? peer.getRelationship() : "unknown";
+            String relatedTo = isNotBlank(peer.getRelatedToIp()) ? peer.getRelatedToIp() : null;
+            String key = peer.getIp().trim() + "|" + relationship + "|" + (relatedTo == null ? "" : relatedTo);
+            if (!dedupe.add(key)) {
+                continue;
+            }
+            double confidence = Math.max(0.0, Math.min(1.0, peer.getConfidence()));
+            out.add(new AnalysisReport.PeerAttacker(peer.getIp().trim(), relationship, confidence, relatedTo));
+            if (out.size() >= limit) {
+                break;
+            }
+        }
+        return out;
+    }
+
     private List<String> selectKeyIndicators(
         List<String> existingIndicators,
         List<String> publicIps,
@@ -1609,7 +1797,7 @@ public class LlmAnalysisService {
         if (topAttackTypes != null && topAttackTypes.size() >= 5) {
             score += 1;
         }
-        if (maxRisk >= 80) {
+        if (maxRisk >= HIGH_RISK_THRESHOLD) {
             score += 1;
         }
         if (score >= 6) {
@@ -1764,12 +1952,19 @@ public class LlmAnalysisService {
         int maxRisk = 0;
         String maxRiskIp = "unknown";
         List<String> indicators = new ArrayList<String>();
+        Map<Integer, Integer> statusCodeDistribution = new HashMap<Integer, Integer>();
+        int successEvents = 0;
+        int statusEvents = 0;
+        LinkedHashSet<String> payloadSamples = new LinkedHashSet<String>();
+        List<AnalysisReport.SourceDetail> topSources = new ArrayList<AnalysisReport.SourceDetail>();
+        Map<String, Integer> attackTypeCounter = new HashMap<String, Integer>();
+        LinkedHashSet<String> targetUrlSet = new LinkedHashSet<String>();
 
         for (AggregatedAlert alert : alerts) {
             int risk = alert.getRiskScore();
-            if (risk >= 70) {
+            if (risk >= HIGH_RISK_THRESHOLD) {
                 high++;
-            } else if (risk >= 40) {
+            } else if (risk >= MEDIUM_RISK_THRESHOLD) {
                 medium++;
             } else {
                 low++;
@@ -1788,17 +1983,69 @@ public class LlmAnalysisService {
                 if (!indicators.contains(attackType)) {
                     indicators.add(attackType);
                 }
+                if (isNotBlank(attackType)) {
+                    attackTypeCounter.put(attackType, attackTypeCounter.getOrDefault(attackType, 0) + 1);
+                }
             }
+            if (alert.getTargetUrls() != null) {
+                for (String url : alert.getTargetUrls()) {
+                    if (isNotBlank(url)) {
+                        targetUrlSet.add(url.trim());
+                    }
+                    if (targetUrlSet.size() >= 8) {
+                        break;
+                    }
+                }
+            }
+            if (alert.getStatusCodes() != null) {
+                for (Map.Entry<Integer, Integer> entry : alert.getStatusCodes().entrySet()) {
+                    Integer code = entry.getKey();
+                    int count = entry.getValue() == null ? 0 : entry.getValue();
+                    if (code == null || count <= 0 || !isStandardHttpStatusCode(code)) {
+                        continue;
+                    }
+                    statusCodeDistribution.put(code, statusCodeDistribution.getOrDefault(code, 0) + count);
+                    statusEvents += count;
+                    if (code >= 200 && code < 300) {
+                        successEvents += count;
+                    }
+                }
+            }
+            if (alert.getTopPayloads() != null) {
+                for (String payload : alert.getTopPayloads()) {
+                    if (payloadSamples.size() >= 6) {
+                        break;
+                    }
+                    String sanitized = sanitizePayloadSample(payload);
+                    if (isNotBlank(sanitized)) {
+                        payloadSamples.add(sanitized);
+                    }
+                }
+            }
+            AnalysisReport.SourceDetail source = new AnalysisReport.SourceDetail();
+            source.setIp(alert.getIp());
+            source.setRiskScore(alert.getRiskScore());
+            source.setPrimaryAttackType(pickPrimaryAttackType(alert.getAttackTypes()));
+            source.setSessionCount(alert.getSessionCount());
+            source.setTotalEvents(alert.getTotalEvents());
+            source.setAsn(alert.getAsn());
+            source.setCountry(alert.getCountry());
+            source.setIsp(alert.getIsp());
+            source.setThreatLevel(alert.getThreatLevel());
+            source.setProfileAttackCount(alert.getProfileAttackCount());
+            source.setFirstSeenTs(alert.getFirstSeenTs());
+            source.setLastSeenTs(alert.getLastSeenTs());
+            topSources.add(source);
         }
 
         report.setRiskScore(maxRisk);
-        report.setRiskLevel(maxRisk >= 70 ? "high" : (maxRisk >= 40 ? "medium" : "low"));
-        report.setAttackDetected(maxRisk >= 40);
+        report.setRiskLevel(maxRisk >= HIGH_RISK_THRESHOLD ? "high" : (maxRisk >= MEDIUM_RISK_THRESHOLD ? "medium" : "low"));
+        report.setAttackDetected(maxRisk >= MEDIUM_RISK_THRESHOLD);
         report.setConfidence(0.65);
-        report.setClassification(maxRisk >= 40 ? "potential_attack" : "likely_scanning");
+        report.setClassification(maxRisk >= MEDIUM_RISK_THRESHOLD ? "potential_attack" : "likely_scanning");
         report.setAttackerSkillLevel("intermediate");
         report.setAutomationType("semi_auto");
-        report.setAttackerIntent(maxRisk >= 70 ? "exploitation" : "reconnaissance");
+        report.setAttackerIntent(maxRisk >= HIGH_RISK_THRESHOLD ? "exploitation" : "reconnaissance");
         report.setKeyIndicators(indicators);
 
         report.setSummary("\u964d\u7ea7\u672c\u5730\u5206\u6790\uff1a\u6d89\u53caIP " + aggregationResult.getTotalIps() +
@@ -1806,6 +2053,40 @@ public class LlmAnalysisService {
             " \u4e2a\uff0c\u6700\u9ad8\u98ce\u9669IP " + maxRiskIp + "\u3002\u539f\u56e0\uff1a" + mapFallbackReason(reason));
         report.setAttackNarrative(buildFallbackNarrative(aggregationResult, reason, high, medium, low));
         report.setRecommendations(buildFallbackRecommendations(maxRiskIp, maxRisk));
+        report.setMainAttackerIp(maxRiskIp);
+        report.setWindowStart(aggregationResult.getStartTime());
+        report.setWindowEnd(aggregationResult.getEndTime());
+        report.setOriginalAlertCount(aggregationResult.getOriginalAlerts());
+        report.setTotalIps(aggregationResult.getTotalIps());
+        report.setHighRiskIps(high);
+        report.setMediumRiskIps(medium);
+        report.setLowRiskIps(low);
+        if (!statusCodeDistribution.isEmpty()) {
+            report.setStatusCodeDistribution(statusCodeDistribution);
+        }
+        if (statusEvents > 0) {
+            report.setOverallSuccessRate(Math.round((successEvents * 10000.0) / statusEvents) / 100.0);
+        }
+        if (!payloadSamples.isEmpty()) {
+            report.setPayloadSamples(new ArrayList<String>(payloadSamples));
+        }
+        report.setTopAttackTypes(pickTopAttackTypes(attackTypeCounter, 5));
+        report.setTopTargetUrls(new ArrayList<String>(targetUrlSet));
+        if (!topSources.isEmpty()) {
+            Collections.sort(topSources, new Comparator<AnalysisReport.SourceDetail>() {
+                @Override
+                public int compare(AnalysisReport.SourceDetail a, AnalysisReport.SourceDetail b) {
+                    return Integer.compare(b.getRiskScore(), a.getRiskScore());
+                }
+            });
+            if (topSources.size() > 8) {
+                topSources = new ArrayList<AnalysisReport.SourceDetail>(topSources.subList(0, 8));
+            }
+            report.setTopSources(topSources);
+        }
+        if (aggregationResult.getAllPeerAttackers() != null && !aggregationResult.getAllPeerAttackers().isEmpty()) {
+            report.setPeerAttackers(convertPeerAttackers(aggregationResult.getAllPeerAttackers(), 12));
+        }
         return report;
     }
 
@@ -1826,7 +2107,7 @@ public class LlmAnalysisService {
         }
         recommendations.add("[MONITOR] \u63d0\u5347\u654f\u611f\u63a5\u53e3\u53ca4xx/5xx\u5f02\u5e38\u5cf0\u503c\u76d1\u63a7\u7b49\u7ea7");
         recommendations.add("[REVIEW] \u590d\u6838\u6700\u8fd1\u53d1\u5e03\u53d8\u66f4\u5e76\u52a0\u56fa\u8f93\u5165\u6821\u9a8c\u4e0e\u9274\u6743");
-        if (maxRisk >= 70) {
+        if (maxRisk >= HIGH_RISK_THRESHOLD) {
             recommendations.add("[IR] \u5bf9\u9ad8\u98ce\u9669\u653b\u51fb\u6d3b\u52a8\u542f\u52a8\u5e94\u6025\u5206\u7ea7\u5904\u7f6e");
         }
         return recommendations;
@@ -1914,9 +2195,9 @@ public class LlmAnalysisService {
                 if (risk > maxRisk) {
                     maxRisk = Math.max(0, Math.min(100, risk));
                 }
-                if (risk >= 70) {
+                if (risk >= HIGH_RISK_THRESHOLD) {
                     highRisk++;
-                } else if (risk >= 40) {
+                } else if (risk >= MEDIUM_RISK_THRESHOLD) {
                     mediumRisk++;
                 }
             }
@@ -2133,9 +2414,9 @@ public class LlmAnalysisService {
             report.setRiskScore(maxRisk);
         }
         if (needLevel) {
-            if (maxRisk >= 70) {
+            if (maxRisk >= HIGH_RISK_THRESHOLD) {
                 report.setRiskLevel("high");
-            } else if (maxRisk >= 40) {
+            } else if (maxRisk >= MEDIUM_RISK_THRESHOLD) {
                 report.setRiskLevel("medium");
             } else {
                 report.setRiskLevel("low");

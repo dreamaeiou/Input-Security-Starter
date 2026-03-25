@@ -23,6 +23,13 @@ public class AttackChainLogGeneratorTest {
         "104.248.50.100", "159.65.100.50", "167.99.50.100", "178.128.100.50"
     };
 
+    private static final String[] PUBLIC_IPS = {
+        "45.33.32.156", "45.55.32.100", "104.248.50.100",
+        "159.65.100.50", "167.99.50.100", "178.128.100.50",
+        "203.0.113.50", "198.51.100.25", "192.0.2.100",
+        "165.227.80.50", "159.89.168.100", "139.59.50.100"
+    };
+
     private static final String[] ATTACK_PHASES = {
         "reconnaissance", "delivery", "exploitation", "installation", 
         "command_control", "actions"
@@ -201,18 +208,21 @@ public class AttackChainLogGeneratorTest {
         result.put("attacker_profile", attackerProfile);
 
         List<Map<String, Object>> relatedAttackers = new ArrayList<>();
-        int relatedCount = RANDOM.nextInt(3) + 1;
+        Set<String> usedIps = new HashSet<>();
+        int relatedCount = RANDOM.nextInt(4) + 2;
         for (int i = 0; i < relatedCount; i++) {
             Map<String, Object> related = new LinkedHashMap<>();
-            String relatedIp = "10.0." + RANDOM.nextInt(256) + "." + RANDOM.nextInt(256);
+            String relatedIp;
+            do {
+                relatedIp = PUBLIC_IPS[RANDOM.nextInt(PUBLIC_IPS.length)];
+            } while (relatedIp.equals(ip) || usedIps.contains(relatedIp));
+            usedIps.add(relatedIp);
             related.put("ip", relatedIp);
             related.put("similarity", 0.5 + RANDOM.nextDouble() * 0.5);
 
             List<String> reasons = new ArrayList<>();
-            if (RANDOM.nextBoolean()) reasons.add("same_asn");
-            if (RANDOM.nextBoolean()) reasons.add("same_attack_type");
+            reasons.add(RANDOM.nextBoolean() ? "same_asn" : "same_attack_type");
             if (RANDOM.nextBoolean()) reasons.add("time_window_overlap");
-            if (reasons.isEmpty()) reasons.add("same_asn");
             related.put("reasons", reasons);
 
             relatedAttackers.add(related);

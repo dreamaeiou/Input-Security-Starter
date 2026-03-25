@@ -118,7 +118,7 @@ public class AliyunBailianProvider implements LlmProvider {
         prompt.append("1) Return exactly one JSON object. No markdown fences. No extra text.\n");
         prompt.append("2) All human-readable strings must be Simplified Chinese.\n");
         prompt.append("3) Do not fabricate assets, timelines, counts, confidence, or indicators.\n");
-        prompt.append("4) You MUST use aggregated_alerts[*].profile_context and aggregated_alerts[*].related_ips when available.\n");
+        prompt.append("4) You MUST use aggregated_alerts[*].profile_context and aggregated_alerts[*].peer_attackers (pre-computed) directly.\n");
         prompt.append("Required schema:\n");
         prompt.append("{\n");
         prompt.append("  \\\"summary\\\": \\\"80-220字，包含关键统计事实\\\",\n");
@@ -137,8 +137,7 @@ public class AliyunBailianProvider implements LlmProvider {
         prompt.append("Constraints:\n");
         prompt.append("- If a field is unavailable, use \\\"未知\\\" for text, [] for arrays, and 0 for numbers.\n");
         prompt.append("- intent_confidence and peer_attackers[*].confidence must be between 0 and 1.\n");
-        prompt.append("- peer_attackers MUST be populated from related_ips in input JSON. Each peer_attacker entry MUST have ip, relationship (inferred from profile_context), and confidence (0.0-1.0).\n");
-        prompt.append("- If related_ips contains entries, you MUST create at least 1 peer_attacker entry. Never return empty peer_attackers array when related_ips is present.\n");
+        prompt.append("- peer_attackers is pre-computed from input JSON. You MUST include ALL entries from aggregated_alerts[*].peer_attackers without modification. Only add new entries if you discover additional related attackers not already listed.\n");
         prompt.append("- Recommendations must map to observed attack types or target URLs.\n\n");
         prompt.append("Input aggregated JSON:\n");
         prompt.append(aggregatedJson);

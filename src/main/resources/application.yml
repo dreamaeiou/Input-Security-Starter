@@ -1,6 +1,3 @@
-# ==================== Input Security Starter 配置 ====================
-# 官方文档: https://github.com/example/input-security-starter
-
 input-security:
   # ------------------- 基础配置 -------------------
   enabled: true                    # 是否启用输入安全检测 (true/false)
@@ -45,7 +42,7 @@ input-security:
     enabled: true                  # 是否启用LLM攻击链分析
     provider: glm                  # LLM提供商: glm=智谱GLM, aliyun-bailian=阿里云百炼
     max-alerts-per-analysis: 50   # 单次分析最大处理的告警数量
-    analysis-timeout-ms: 100000    # LLM分析超时时间 (毫秒)
+    analysis-timeout-ms: 600000    # LLM分析超时时间 (毫秒)
     max-prompt-chars: 24000        # 最大Prompt字符数 (防止超出LLM上下文限制)
     max-ips-per-analysis: 50       # 单次分析最大IP数量
     max-events-per-ip: 50          # 单个IP最大事件数

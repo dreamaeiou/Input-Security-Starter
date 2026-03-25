@@ -35,6 +35,8 @@ public class LlmAnalysisTest {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static final SimpleDateFormat REPORT_TIME_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    private static final int HIGH_RISK_THRESHOLD = 80;
+    private static final int MEDIUM_RISK_THRESHOLD = 50;
 
     public static void main(String[] args) {
         loadEnvFile();
@@ -189,11 +191,11 @@ public class LlmAnalysisTest {
 
         System.out.println("\n【步骤5】显示聚合结果摘要...");
         System.out.println("  高风险IP数：" + aggregationResult.getAggregatedAlerts().stream()
-                .filter(a -> a.getRiskScore() >= 70).count());
+                .filter(a -> a.getRiskScore() >= HIGH_RISK_THRESHOLD).count());
         System.out.println("  中风险IP数：" + aggregationResult.getAggregatedAlerts().stream()
-                .filter(a -> a.getRiskScore() >= 40 && a.getRiskScore() < 70).count());
+                .filter(a -> a.getRiskScore() >= MEDIUM_RISK_THRESHOLD && a.getRiskScore() < HIGH_RISK_THRESHOLD).count());
         System.out.println("  低风险IP数：" + aggregationResult.getAggregatedAlerts().stream()
-                .filter(a -> a.getRiskScore() < 40).count());
+                .filter(a -> a.getRiskScore() < MEDIUM_RISK_THRESHOLD).count());
 
         System.out.println("\n【步骤6】显示各IP聚合详情...");
         for (org.example.input_security_starter.llm.analysis.AggregatedAlert alert : aggregationResult.getAggregatedAlerts()) {
