@@ -363,10 +363,15 @@ public class LlmAnalysisService {
                 return IncrementalAnalysisResult.withReport(report, readResult.getEndLineInclusive(), alertLogs.size());
             }
 
-            String llmResponse = callLlmWithTimeout(budgetedJson, startMs);
+            LlmInvocationResult invocationResult = callLlmWithTimeout(budgetedJson, startMs);
+            String llmResponse = invocationResult.getResponse();
             AnalysisReport report;
             if (llmResponse == null || llmResponse.trim().isEmpty()) {
-                report = createLocalFallbackReport(aggregationResult, "LLM returned empty response", aggregationResult.getProcessedAlerts());
+                report = createLocalFallbackReport(
+                    aggregationResult,
+                    resolveFallbackReason(invocationResult),
+                    aggregationResult.getProcessedAlerts()
+                );
             } else if (!validateLlmOutput(llmResponse)) {
                 report = createLocalFallbackReport(aggregationResult, "LLM output validation failed", aggregationResult.getProcessedAlerts());
             } else {
@@ -374,8 +379,11 @@ public class LlmAnalysisService {
             }
 
             applyRiskFallbackFromAggregation(report, aggregationResult);
+            applyConfidenceFallbackFromAggregation(report, aggregationResult);
             normalizeReportToChinese(report);
             enrichReportWithAggregationContext(report, aggregationResult);
+            applyRecommendationQualityGuard(report, aggregationResult);
+            appendDegradedReasonToSummary(report);
             report.setIpIntelligenceCount(aggregationResult.getTotalIps());
             report.setAlertCount(aggregationResult.getProcessedAlerts());
             reportCache.put(report.getReportId(), report);
@@ -392,10 +400,10 @@ public class LlmAnalysisService {
         }
     }
 
-    private String callLlmWithTimeout(final String aggregatedJson, long startMs) {
+    private LlmInvocationResult callLlmWithTimeout(final String aggregatedJson, long startMs) {
         long remainMs = analysisTimeoutMs - (System.currentTimeMillis() - startMs);
         if (remainMs <= 0) {
-            return null;
+            return LlmInvocationResult.failure("analysis_timeout_before_llm_invocation");
         }
 
         Future<String> future = llmExecutor.submit(new Callable<String>() {
@@ -406,18 +414,55 @@ public class LlmAnalysisService {
         });
 
         try {
-            return future.get(remainMs, TimeUnit.MILLISECONDS);
+            String response = future.get(remainMs, TimeUnit.MILLISECONDS);
+            if (response != null && !response.trim().isEmpty()) {
+                return LlmInvocationResult.success(response);
+            }
+            String providerReason = llmProvider.getLastFailureReason();
+            if (!isNotBlank(providerReason)) {
+                providerReason = "llm_empty_response";
+            }
+            return LlmInvocationResult.failure(providerReason);
         } catch (TimeoutException te) {
             future.cancel(true);
             log.warn("LLM invocation timed out after {} ms", remainMs);
-            return null;
+            return LlmInvocationResult.failure("llm_invocation_timeout");
         } catch (InterruptedException ie) {
             future.cancel(true);
             Thread.currentThread().interrupt();
-            return null;
+            return LlmInvocationResult.failure("llm_invocation_interrupted");
         } catch (ExecutionException ee) {
             log.error("LLM invocation failed: {}", ee.getMessage());
-            return null;
+            String providerReason = llmProvider.getLastFailureReason();
+            if (!isNotBlank(providerReason)) {
+                providerReason = "llm_execution_exception";
+            }
+            return LlmInvocationResult.failure(providerReason);
+        }
+    }
+
+    private String resolveFallbackReason(LlmInvocationResult invocationResult) {
+        if (invocationResult == null || !isNotBlank(invocationResult.getFailureReason())) {
+            return "LLM returned empty response";
+        }
+        return invocationResult.getFailureReason();
+    }
+
+    private void appendDegradedReasonToSummary(AnalysisReport report) {
+        if (report == null || !"degraded".equalsIgnoreCase(report.getStatus()) || !isNotBlank(report.getErrorMessage())) {
+            return;
+        }
+        String readableReason = mapFallbackReason(report.getErrorMessage());
+        if (!isNotBlank(readableReason)) {
+            return;
+        }
+        String summary = report.getSummary();
+        if (!isNotBlank(summary)) {
+            report.setSummary("降级原因：" + readableReason);
+            return;
+        }
+        if (!summary.contains(readableReason) && !summary.contains("降级原因")) {
+            report.setSummary(summary + " 降级原因：" + readableReason + "。");
         }
     }
 
@@ -596,7 +641,7 @@ public class LlmAnalysisService {
             populated = true;
         }
 
-        List<String> recommendations = readStringArray(root.get("recommendations"), 8);
+        List<String> recommendations = readStringArray(root.get("recommendations"), 12);
         if (!recommendations.isEmpty()) {
             report.setRecommendations(recommendations);
             populated = true;
@@ -617,6 +662,9 @@ public class LlmAnalysisService {
         }
 
         JsonNode attackerNode = root.get("attacker");
+        if ((attackerNode == null || !attackerNode.isObject()) && root.has("attacker_profile") && root.get("attacker_profile").isObject()) {
+            attackerNode = root.get("attacker_profile");
+        }
         if (attackerNode != null && attackerNode.isObject()) {
             String skillLevel = readText(attackerNode, "skill_level");
             if (isNotBlank(skillLevel)) {
@@ -633,6 +681,33 @@ public class LlmAnalysisService {
                 report.setAttackerIntent(intent);
                 populated = true;
             }
+            String pattern = readText(attackerNode, "pattern");
+            if (isNotBlank(pattern)) {
+                report.setAttackerPattern(pattern);
+                populated = true;
+            }
+            double intentConfidence = readDouble(attackerNode, "intent_confidence", -1.0);
+            if (intentConfidence >= 0.0 && intentConfidence <= 1.0) {
+                report.setAttackerIntentConfidence(intentConfidence);
+                populated = true;
+            }
+        }
+
+        if (report.getAttackerIntentConfidence() <= 0) {
+            double topLevelIntentConfidence = readDouble(root, "intent_confidence", -1.0);
+            if (topLevelIntentConfidence >= 0.0 && topLevelIntentConfidence <= 1.0) {
+                report.setAttackerIntentConfidence(topLevelIntentConfidence);
+                populated = true;
+            }
+        }
+
+        List<AnalysisReport.PeerAttacker> peerAttackers = readPeerAttackers(root.get("peer_attackers"), 12);
+        if (peerAttackers.isEmpty()) {
+            peerAttackers = readPeerAttackers(root.get("related_attackers"), 12);
+        }
+        if (!peerAttackers.isEmpty()) {
+            report.setPeerAttackers(peerAttackers);
+            populated = true;
         }
 
         List<String> keyIndicators = readStringArray(root.get("key_indicators"), 10);
@@ -769,6 +844,63 @@ public class LlmAnalysisService {
         String text = node.asText();
         if (isNotBlank(text)) {
             values.add(text.trim());
+        }
+        return values;
+    }
+
+    private List<AnalysisReport.PeerAttacker> readPeerAttackers(JsonNode node, int maxSize) {
+        List<AnalysisReport.PeerAttacker> values = new ArrayList<AnalysisReport.PeerAttacker>();
+        if (node == null || maxSize <= 0) {
+            return values;
+        }
+
+        Set<String> seen = new LinkedHashSet<String>();
+        if (node.isArray()) {
+            for (JsonNode item : node) {
+                if (values.size() >= maxSize || item == null || item.isNull()) {
+                    if (values.size() >= maxSize) {
+                        break;
+                    }
+                    continue;
+                }
+                String ip = null;
+                String relationship = null;
+                double confidence = 0.0;
+                if (item.isObject()) {
+                    ip = readText(item, "ip");
+                    if (!isNotBlank(ip)) {
+                        ip = readText(item, "target_ip");
+                    }
+                    relationship = readText(item, "relationship");
+                    if (!isNotBlank(relationship)) {
+                        relationship = readText(item, "reason");
+                    }
+                    confidence = readDouble(item, "confidence", -1.0);
+                    if (confidence < 0) {
+                        confidence = readDouble(item, "similarity", 0.0);
+                    }
+                } else {
+                    ip = item.asText();
+                    relationship = "unknown";
+                }
+
+                if (!isNotBlank(ip)) {
+                    continue;
+                }
+                String normalizedIp = ip.trim();
+                String normalizedRelationship = isNotBlank(relationship) ? relationship.trim() : "unknown";
+                double normalizedConfidence = Math.max(0.0, Math.min(1.0, confidence));
+                String dedupeKey = normalizedIp + "|" + normalizedRelationship;
+                if (seen.add(dedupeKey)) {
+                    values.add(new AnalysisReport.PeerAttacker(normalizedIp, normalizedRelationship, normalizedConfidence));
+                }
+            }
+            return values;
+        }
+
+        String ip = node.asText();
+        if (isNotBlank(ip)) {
+            values.add(new AnalysisReport.PeerAttacker(ip.trim(), "unknown", 0.0));
         }
         return values;
     }
@@ -1076,6 +1208,96 @@ public class LlmAnalysisService {
         report.setAttackerSkillLevel(calibrateSkillLevel(phaseSet, topAttackTypes, maxRisk));
     }
 
+    private void applyRecommendationQualityGuard(
+        AnalysisReport report,
+        AlertAggregator.AggregationResult aggregationResult
+    ) {
+        if (report == null || aggregationResult == null || report.getRecommendations() == null) {
+            return;
+        }
+        RecommendationEvidence evidence = buildRecommendationEvidence(aggregationResult);
+        List<String> recommendations = report.getRecommendations();
+        int taggedCount = 0;
+        int groundedCount = 0;
+        for (String recommendation : recommendations) {
+            if (isNotBlank(extractRecommendationTag(recommendation))) {
+                taggedCount++;
+            }
+            if (isRecommendationGrounded(recommendation, evidence.topAttackTypes, evidence.topTargetUrls, evidence.publicIps)) {
+                groundedCount++;
+            }
+        }
+
+        boolean weakQuality = recommendations.size() != 5 || taggedCount < 5 || groundedCount < 3;
+        if (!weakQuality) {
+            return;
+        }
+
+        log.warn(
+            "Recommendation quality guard triggered: size={}, tagged={}, grounded={}",
+            recommendations.size(),
+            taggedCount,
+            groundedCount
+        );
+
+        report.setRecommendations(new ArrayList<String>());
+        enrichReportWithAggregationContext(report, aggregationResult);
+        if ("success".equalsIgnoreCase(report.getStatus())) {
+            report.setStatus("guarded");
+        }
+        String guardMessage = "LLM recommendations low quality; replaced with deterministic recommendations";
+        if (!isNotBlank(report.getErrorMessage())) {
+            report.setErrorMessage(guardMessage);
+        } else if (!report.getErrorMessage().contains(guardMessage)) {
+            report.setErrorMessage(report.getErrorMessage() + "; " + guardMessage);
+        }
+    }
+
+    private RecommendationEvidence buildRecommendationEvidence(AlertAggregator.AggregationResult aggregationResult) {
+        RecommendationEvidence evidence = new RecommendationEvidence();
+        if (aggregationResult == null || aggregationResult.getAggregatedAlerts() == null) {
+            return evidence;
+        }
+        Map<String, Integer> attackTypeCounter = new HashMap<String, Integer>();
+        LinkedHashSet<String> targetUrlSet = new LinkedHashSet<String>();
+        LinkedHashSet<String> publicIpSet = new LinkedHashSet<String>();
+        for (AggregatedAlert alert : aggregationResult.getAggregatedAlerts()) {
+            if (alert == null) {
+                continue;
+            }
+            if (isPublicRoutableIp(alert.getIp())) {
+                publicIpSet.add(alert.getIp());
+            }
+            if (alert.getAttackTypes() != null) {
+                for (Map.Entry<String, Integer> entry : alert.getAttackTypes().entrySet()) {
+                    String key = entry.getKey();
+                    Integer val = entry.getValue();
+                    if (isNotBlank(key) && val != null && val > 0) {
+                        attackTypeCounter.put(key, attackTypeCounter.getOrDefault(key, 0) + val);
+                    }
+                }
+            }
+            if (alert.getTargetUrls() != null) {
+                for (String url : alert.getTargetUrls()) {
+                    if (isNotBlank(url)) {
+                        targetUrlSet.add(url.trim());
+                    }
+                }
+            }
+        }
+
+        evidence.topAttackTypes = pickTopAttackTypes(attackTypeCounter, 5);
+        evidence.topTargetUrls = new ArrayList<String>();
+        for (String url : targetUrlSet) {
+            evidence.topTargetUrls.add(url);
+            if (evidence.topTargetUrls.size() >= 5) {
+                break;
+            }
+        }
+        evidence.publicIps = new ArrayList<String>(publicIpSet);
+        return evidence;
+    }
+
     private String buildQuantifiedSummary(
         AnalysisReport report,
         AlertAggregator.AggregationResult aggregationResult,
@@ -1147,27 +1369,115 @@ public class LlmAnalysisService {
         actionMap.put("[PATCH]", buildPatchRecommendation(topAttackTypes, topTargetUrls));
         actionMap.put("[MONITOR]", buildMonitorRecommendation(topAttackTypes, topTargetUrls));
         actionMap.put("[REVIEW]", buildReviewRecommendation(topAttackTypes, topTargetUrls));
-
         if (report.isAttackDetected() || maxRisk >= 70) {
             actionMap.put("[IR]", "[IR] \u542f\u52a8\u5e94\u6025\u54cd\u5e94\u6d41\u7a0b\uff0c\u56fa\u5316\u53d6\u8bc1\u8bc1\u636e\u5e76\u8ddf\u8fdb\u8d26\u53f7/\u8d44\u4ea7\u7ea7\u522b\u6392\u67e5");
+        } else {
+            actionMap.put("[IR]", "[IR] \u5efa\u7acb\u4e8b\u4ef6\u590d\u76d8\u548c\u54cd\u5e94\u9884\u6848\uff0c\u786e\u4fdd\u9ad8\u98ce\u9669\u6307\u6807\u51fa\u73b0\u65f6\u53ef\u5feb\u901f\u5347\u7ea7");
         }
 
-        List<String> recommendations = new ArrayList<String>(actionMap.values());
         if (report.getRecommendations() != null) {
             for (String existing : report.getRecommendations()) {
                 if (!isNotBlank(existing)) {
                     continue;
                 }
                 String clean = existing.trim().replaceAll("\\s+", " ");
-                if (!recommendations.contains(clean)) {
-                    recommendations.add(clean);
+                String tag = extractRecommendationTag(clean);
+                if (!isNotBlank(tag) || !actionMap.containsKey(tag)) {
+                    continue;
                 }
-                if (recommendations.size() >= 8) {
+                if (!isRecommendationGrounded(clean, topAttackTypes, topTargetUrls, publicIps)) {
+                    continue;
+                }
+                if (!clean.startsWith(tag)) {
+                    clean = tag + " " + clean;
+                }
+                actionMap.put(tag, clean);
+            }
+        }
+        return new ArrayList<String>(actionMap.values());
+    }
+
+    private String extractRecommendationTag(String recommendation) {
+        if (!isNotBlank(recommendation)) {
+            return null;
+        }
+        String upper = recommendation.trim().toUpperCase();
+        if (upper.startsWith("[BLOCK]")) {
+            return "[BLOCK]";
+        }
+        if (upper.startsWith("[PATCH]")) {
+            return "[PATCH]";
+        }
+        if (upper.startsWith("[MONITOR]")) {
+            return "[MONITOR]";
+        }
+        if (upper.startsWith("[REVIEW]")) {
+            return "[REVIEW]";
+        }
+        if (upper.startsWith("[IR]")) {
+            return "[IR]";
+        }
+        return null;
+    }
+
+    private boolean isRecommendationGrounded(
+        String recommendation,
+        List<String> topAttackTypes,
+        List<String> topTargetUrls,
+        List<String> publicIps
+    ) {
+        if (!isNotBlank(recommendation)) {
+            return false;
+        }
+        String text = recommendation.trim().toLowerCase();
+        boolean hasEvidence = false;
+
+        if (topAttackTypes != null) {
+            for (String attackType : topAttackTypes) {
+                if (isNotBlank(attackType) && text.contains(attackType.toLowerCase())) {
+                    hasEvidence = true;
                     break;
                 }
             }
         }
-        return recommendations;
+        if (!hasEvidence && topTargetUrls != null) {
+            for (String targetUrl : topTargetUrls) {
+                if (isNotBlank(targetUrl) && text.contains(targetUrl.toLowerCase())) {
+                    hasEvidence = true;
+                    break;
+                }
+            }
+        }
+        if (!hasEvidence && publicIps != null) {
+            for (String ip : publicIps) {
+                if (isNotBlank(ip) && text.contains(ip)) {
+                    hasEvidence = true;
+                    break;
+                }
+            }
+        }
+        if (!hasEvidence) {
+            return false;
+        }
+
+        String[] genericPhrases = new String[]{
+            "关闭不必要的端口",
+            "更新所有软件",
+            "更新系统漏洞",
+            "监控敏感数据访问",
+            "审查用户权限",
+            "立即响应",
+            "监控所有异常",
+            "monitor all",
+            "update all",
+            "close unnecessary ports"
+        };
+        for (String phrase : genericPhrases) {
+            if (text.contains(phrase.toLowerCase())) {
+                return false;
+            }
+        }
+        return recommendation.trim().length() >= 12;
     }
 
     private String buildPatchRecommendation(List<String> topAttackTypes, List<String> topTargetUrls) {
@@ -1576,6 +1886,59 @@ public class LlmAnalysisService {
         return 0.7;
     }
 
+    private void applyConfidenceFallbackFromAggregation(AnalysisReport report, AlertAggregator.AggregationResult aggregationResult) {
+        if (report == null) {
+            return;
+        }
+        double current = report.getConfidence();
+        if (Double.isNaN(current) || Double.isInfinite(current)) {
+            current = 0.0;
+        }
+        if (current > 1.0) {
+            report.setConfidence(1.0);
+            return;
+        }
+        if (current > 0.01) {
+            return;
+        }
+
+        int maxRisk = Math.max(0, Math.min(100, report.getRiskScore()));
+        int highRisk = 0;
+        int mediumRisk = 0;
+        if (aggregationResult != null && aggregationResult.getAggregatedAlerts() != null) {
+            for (AggregatedAlert alert : aggregationResult.getAggregatedAlerts()) {
+                if (alert == null) {
+                    continue;
+                }
+                int risk = alert.getRiskScore();
+                if (risk > maxRisk) {
+                    maxRisk = Math.max(0, Math.min(100, risk));
+                }
+                if (risk >= 70) {
+                    highRisk++;
+                } else if (risk >= 40) {
+                    mediumRisk++;
+                }
+            }
+        }
+
+        double riskFactor = maxRisk / 100.0;
+        double estimated;
+        if (report.isAttackDetected()) {
+            estimated = 0.62 + (0.28 * riskFactor);
+            if (highRisk > 0) {
+                estimated += 0.05;
+            } else if (mediumRisk > 0) {
+                estimated += 0.02;
+            }
+            estimated = Math.max(0.55, Math.min(0.95, estimated));
+        } else {
+            estimated = 0.45 + (0.20 * riskFactor);
+            estimated = Math.max(0.35, Math.min(0.80, estimated));
+        }
+        report.setConfidence(estimated);
+    }
+
     private List<String> extractRecommendations(String response) {
         List<String> recommendations = new ArrayList<String>();
         String defenseSection = extractSection(
@@ -1595,7 +1958,7 @@ public class LlmAnalysisService {
             } else if (trimmed.length() >= 12 && !trimmed.startsWith("#") && !trimmed.startsWith("```")) {
                 dedup.add(trimmed);
             }
-            if (dedup.size() >= 8) {
+            if (dedup.size() >= 5) {
                 break;
             }
         }
@@ -1648,6 +2011,30 @@ public class LlmAnalysisService {
     private String mapFallbackReason(String reason) {
         if (reason == null) {
             return "\u672a\u77e5\u539f\u56e0";
+        }
+        if ("llm_invocation_timeout".equals(reason) || "analysis_timeout_before_llm_invocation".equals(reason)) {
+            return "LLM\u8c03\u7528\u8d85\u65f6";
+        }
+        if ("rate_limited".equals(reason)) {
+            return "LLM\u8c03\u7528\u89e6\u53d1\u9650\u6d41";
+        }
+        if ("circuit_open".equals(reason)) {
+            return "LLM\u7194\u65ad\u5668\u5f00\u542f\uff0c\u6682\u65f6\u4e0d\u53ef\u7528";
+        }
+        if ("response_parse_empty_content".equals(reason) || "response_parse_failed".equals(reason)) {
+            return "LLM\u8fd4\u56de\u5b58\u5728\uff0c\u4f46\u89e3\u6790\u5931\u8d25\u6216\u5185\u5bb9\u4e3a\u7a7a";
+        }
+        if ("network_exception".equals(reason)) {
+            return "LLM\u7f51\u7edc\u8c03\u7528\u5931\u8d25";
+        }
+        if ("llm_execution_exception".equals(reason) || "llm_invocation_interrupted".equals(reason)) {
+            return "LLM\u8c03\u7528\u6267\u884c\u5f02\u5e38";
+        }
+        if ("llm_empty_response".equals(reason) || "provider_empty_response".equals(reason)) {
+            return "LLM\u8fd4\u56de\u7a7a\u5185\u5bb9";
+        }
+        if (reason.startsWith("http_status_")) {
+            return "LLM\u4e0a\u6e38\u8fd4\u56de\u975e200\u72b6\u6001: " + reason.substring("http_status_".length());
         }
         if ("LLM output validation failed".equals(reason)) {
             return "LLM\u8f93\u51fa\u672a\u901a\u8fc7\u7ed3\u6784\u6821\u9a8c";
@@ -1802,6 +2189,38 @@ public class LlmAnalysisService {
     public boolean isLogFileExists() {
         File logFile = new File(alertLogPath);
         return logFile.exists() && logFile.length() > 0;
+    }
+
+    private static class LlmInvocationResult {
+        private final String response;
+        private final String failureReason;
+
+        private LlmInvocationResult(String response, String failureReason) {
+            this.response = response;
+            this.failureReason = failureReason;
+        }
+
+        public static LlmInvocationResult success(String response) {
+            return new LlmInvocationResult(response, null);
+        }
+
+        public static LlmInvocationResult failure(String reason) {
+            return new LlmInvocationResult(null, reason);
+        }
+
+        public String getResponse() {
+            return response;
+        }
+
+        public String getFailureReason() {
+            return failureReason;
+        }
+    }
+
+    private static class RecommendationEvidence {
+        private List<String> topAttackTypes = Collections.emptyList();
+        private List<String> topTargetUrls = Collections.emptyList();
+        private List<String> publicIps = Collections.emptyList();
     }
 
     public static class IncrementalAnalysisResult {

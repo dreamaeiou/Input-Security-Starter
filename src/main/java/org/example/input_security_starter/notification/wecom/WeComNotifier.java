@@ -113,6 +113,23 @@ public class WeComNotifier {
             content.append('\n');
         }
 
+        if (report.getPeerAttackers() != null && !report.getPeerAttackers().isEmpty()) {
+            content.append("## 关联攻击者\n\n");
+            int limit = Math.min(10, report.getPeerAttackers().size());
+            for (int i = 0; i < limit; i++) {
+                AnalysisReport.PeerAttacker peer = report.getPeerAttackers().get(i);
+                String relationship = formatRelationship(peer.getRelationship());
+                int confidence = (int) Math.round(Math.max(0, Math.min(1, peer.getConfidence())) * 100);
+                content.append(String.format("%d. **%s** | 关联: %s | 可信度: %d%%\n",
+                    i + 1,
+                    notBlank(peer.getIp()) ? peer.getIp() : "未知",
+                    relationship,
+                    confidence
+                ));
+            }
+            content.append("\n");
+        }
+
         if ("error".equals(report.getStatus()) && notBlank(report.getErrorMessage())) {
             content.append("## 错误信息\n\n");
             content.append("> ").append(report.getErrorMessage()).append("\n\n");
@@ -238,6 +255,26 @@ public class WeComNotifier {
                 return "数据窃取";
             default:
                 return null;
+        }
+    }
+
+    private String formatRelationship(String relationship) {
+        if (relationship == null) {
+            return "未知";
+        }
+        switch (relationship.toLowerCase()) {
+            case "same_asn":
+                return "同一ASN";
+            case "same_attack_type":
+                return "相同攻击手法";
+            case "same_time_window":
+                return "时间窗口重叠";
+            case "same_country":
+                return "同一国家";
+            case "same_target":
+                return "相同攻击目标";
+            default:
+                return relationship;
         }
     }
 

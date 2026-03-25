@@ -22,6 +22,7 @@ import org.example.input_security_starter.notification.wecom.WeComClient;
 import org.example.input_security_starter.notification.wecom.WeComNotifier;
 import org.example.input_security_starter.notification.dingtalk.DingTalkClient;
 import org.example.input_security_starter.notification.dingtalk.DingTalkNotifier;
+import org.example.input_security_starter.tracker.AttackerIndex;
 import org.example.input_security_starter.tracker.AttackChainAlert;
 import org.example.input_security_starter.tracker.AttackChainTracker;
 import org.example.input_security_starter.web.InputSecurityController;
@@ -29,7 +30,6 @@ import org.example.input_security_starter.web.ViewController;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -60,23 +60,48 @@ public class InputSecurityAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnProperty(prefix = "input-security.attack-chain", name = {"enabled", "attacker-index-enabled"}, havingValue = "true", matchIfMissing = true)
+    public AttackerIndex attackerIndex(InputSecurityProperties properties) {
+        InputSecurityProperties.AttackChainConfig config = properties.getAttackChain();
+        AttackerIndex index = new AttackerIndex(
+            config.getMaxProfiles(),
+            config.getProfileTtlDays(),
+            config.getEvictionBatchSize(),
+            config.getStatsUpdateInterval(),
+            config.getMaxRecentSessions(),
+            config.getRelatedTimeWindowMinutes()
+        );
+        log.info("AttackerIndex created: maxProfiles={}, ttlDays={}, evictionBatch={}, statsInterval={}",
+            config.getMaxProfiles(), config.getProfileTtlDays(), config.getEvictionBatchSize(), config.getStatsUpdateInterval());
+        return index;
+    }
+
+    @Bean
     @ConditionalOnProperty(prefix = "input-security.attack-chain", name = "enabled", havingValue = "true", matchIfMissing = true)
     public AttackChainTracker attackChainTracker(
             InputSecurityProperties properties,
-            @org.springframework.beans.factory.annotation.Autowired(required = false) AlertCounter alertCounter) {
+            @org.springframework.beans.factory.annotation.Autowired(required = false) AlertCounter alertCounter,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) AttackerIndex attackerIndex) {
         InputSecurityProperties.AttackChainConfig config = properties.getAttackChain();
         
         AttackChainTracker tracker = new AttackChainTracker(
             config.getMaxSessions(),
             config.getSessionTimeoutMinutes(),
             config.getMaxEventsPerSession(),
-            config.getMinPhasesForChain()
+            config.getMinPhasesForChain(),
+            config.getRiskScoreThreshold()
         );
+        tracker.setMaxRelatedAttackers(config.getMaxRelatedAttackers());
+
+        if (attackerIndex != null) {
+            tracker.setAttackerIndex(attackerIndex);
+        }
         
         tracker.setAlertHandler(alert -> handleAlert(alert, config.getAlertLogPath(), alertCounter));
         
-        log.info("AttackChainTracker created with config: maxSessions={}, timeout={}min",
-                 config.getMaxSessions(), config.getSessionTimeoutMinutes());
+        log.info("AttackChainTracker created with config: maxSessions={}, timeout={}min, riskThreshold={}, attackerIndexEnabled={}",
+                 config.getMaxSessions(), config.getSessionTimeoutMinutes(), config.getRiskScoreThreshold(),
+                 attackerIndex != null);
         
         return tracker;
     }

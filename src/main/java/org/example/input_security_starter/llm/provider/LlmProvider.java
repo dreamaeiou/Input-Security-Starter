@@ -18,4 +18,8 @@ public interface LlmProvider {
     boolean isAvailable();
 
     LlmProviderConfig getConfig();
+
+    default String getLastFailureReason() {
+        return null;
+    }
 }

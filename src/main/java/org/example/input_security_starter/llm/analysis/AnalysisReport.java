@@ -27,6 +27,9 @@ public class AnalysisReport {
     private String attackerSkillLevel;
     private String automationType;
     private String attackerIntent;
+    private String attackerPattern;
+    private double attackerIntentConfidence;
+    private List<PeerAttacker> peerAttackers;
     private String attackNarrative;
     private List<String> keyIndicators;
     private int ipIntelligenceCount;
@@ -81,6 +84,28 @@ public class AnalysisReport {
         public void setSourceIp(String sourceIp) { this.sourceIp = sourceIp; }
     }
 
+    public static class PeerAttacker {
+        private String ip;
+        private String relationship;
+        private double confidence;
+
+        public PeerAttacker() {
+        }
+
+        public PeerAttacker(String ip, String relationship, double confidence) {
+            this.ip = ip;
+            this.relationship = relationship;
+            this.confidence = confidence;
+        }
+
+        public String getIp() { return ip; }
+        public void setIp(String ip) { this.ip = ip; }
+        public String getRelationship() { return relationship; }
+        public void setRelationship(String relationship) { this.relationship = relationship; }
+        public double getConfidence() { return confidence; }
+        public void setConfidence(double confidence) { this.confidence = confidence; }
+    }
+
     public String getReportId() { return reportId; }
     public void setReportId(String reportId) { this.reportId = reportId; }
     public Date getAnalysisTime() { return analysisTime; }
@@ -120,6 +145,12 @@ public class AnalysisReport {
     public void setAutomationType(String automationType) { this.automationType = automationType; }
     public String getAttackerIntent() { return attackerIntent; }
     public void setAttackerIntent(String attackerIntent) { this.attackerIntent = attackerIntent; }
+    public String getAttackerPattern() { return attackerPattern; }
+    public void setAttackerPattern(String attackerPattern) { this.attackerPattern = attackerPattern; }
+    public double getAttackerIntentConfidence() { return attackerIntentConfidence; }
+    public void setAttackerIntentConfidence(double attackerIntentConfidence) { this.attackerIntentConfidence = attackerIntentConfidence; }
+    public List<PeerAttacker> getPeerAttackers() { return peerAttackers; }
+    public void setPeerAttackers(List<PeerAttacker> peerAttackers) { this.peerAttackers = peerAttackers; }
     public String getAttackNarrative() { return attackNarrative; }
     public void setAttackNarrative(String attackNarrative) { this.attackNarrative = attackNarrative; }
     public List<String> getKeyIndicators() { return keyIndicators; }
@@ -151,7 +182,15 @@ public class AnalysisReport {
         attacker.put("skill_level", attackerSkillLevel);
         attacker.put("automation", automationType);
         attacker.put("intent", attackerIntent);
+        attacker.put("pattern", attackerPattern);
+        if (attackerIntentConfidence > 0) {
+            attacker.put("intent_confidence", attackerIntentConfidence);
+        }
         result.put("attacker", attacker);
+
+        if (peerAttackers != null && !peerAttackers.isEmpty()) {
+            result.put("peer_attackers", peerAttackers);
+        }
         
         if (attackNarrative != null || (keyIndicators != null && !keyIndicators.isEmpty())) {
             java.util.Map<String, Object> evidence = new java.util.HashMap<>();

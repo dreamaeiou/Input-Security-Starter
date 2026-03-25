@@ -42,6 +42,10 @@ public class AttackChainAlert {
     
     /** 攻击持续时间（毫秒） */
     private long duration;
+    private int riskScore;
+    private String threatLevel;
+    private Map<String, Object> attackerProfile;
+    private List<Map<String, Object>> relatedAttackers;
     
     /** 告警时间戳 */
     private final long timestamp;
@@ -85,6 +89,16 @@ public class AttackChainAlert {
         }
         
         result.put("duration_ms", duration);
+        result.put("risk_score", riskScore);
+        if (threatLevel != null && !threatLevel.isEmpty()) {
+            result.put("threat_level", threatLevel);
+        }
+        if (attackerProfile != null && !attackerProfile.isEmpty()) {
+            result.put("attacker_profile", attackerProfile);
+        }
+        if (relatedAttackers != null && !relatedAttackers.isEmpty()) {
+            result.put("related_attackers", relatedAttackers);
+        }
         
         return result;
     }
@@ -141,6 +155,18 @@ public class AttackChainAlert {
     
     public long getDuration() { return duration; }
     public void setDuration(long duration) { this.duration = duration; }
+
+    public int getRiskScore() { return riskScore; }
+    public void setRiskScore(int riskScore) { this.riskScore = riskScore; }
+
+    public String getThreatLevel() { return threatLevel; }
+    public void setThreatLevel(String threatLevel) { this.threatLevel = threatLevel; }
+
+    public Map<String, Object> getAttackerProfile() { return attackerProfile; }
+    public void setAttackerProfile(Map<String, Object> attackerProfile) { this.attackerProfile = attackerProfile; }
+
+    public List<Map<String, Object>> getRelatedAttackers() { return relatedAttackers; }
+    public void setRelatedAttackers(List<Map<String, Object>> relatedAttackers) { this.relatedAttackers = relatedAttackers; }
     
     public long getTimestamp() { return timestamp; }
 }

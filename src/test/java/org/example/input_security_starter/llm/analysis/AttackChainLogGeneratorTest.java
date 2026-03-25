@@ -62,6 +62,21 @@ public class AttackChainLogGeneratorTest {
         "sqlmap/1.5.2", "Nikto/2.1.6", "DirBuster-1.0-RC1"
     };
 
+    private static final String[] ASN_COUNTRIES = {
+        "{\"asn\":12345,\"country\":\"CN\",\"isp\":\"China Telecom\"}",
+        "{\"asn\":12346,\"country\":\"CN\",\"isp\":\"China Unicom\"}",
+        "{\"asn\":12347,\"country\":\"US\",\"isp\":\"Cloudflare\"}",
+        "{\"asn\":12348,\"country\":\"HK\",\"isp\":\"PCCW\"}",
+        "{\"asn\":12349,\"country\":\"JP\",\"isp\":\"NTT\"}",
+        "{\"asn\":12350,\"country\":\"KR\",\"isp\":\"KT\"}"
+    };
+
+    private static final String[] THREAT_LEVELS = {"low", "medium", "high", "critical"};
+    private static final String[] ATTACK_TYPE_NAMES = {
+        "sql-injection", "xss-attack", "command-injection", "ssrf-attack",
+        "path-traversal", "xxe-injection", "template-injection", "deserialization-attack"
+    };
+
     @Test
     public void generateHighVolumeAttackLog() throws Exception {
         generateAttackLog("attack-chain-alerts.log", 200);
@@ -152,6 +167,58 @@ public class AttackChainLogGeneratorTest {
         alert.put("events", events);
         alert.put("attack_chains", attackChains);
 
+        alert.putAll(generateAttackerProfileContext(ip, triggeredPhases, phaseCount));
+
         return alert;
+    }
+
+    private Map<String, Object> generateAttackerProfileContext(String ip, List<String> triggeredPhases, int phaseCount) {
+        Map<String, Object> result = new LinkedHashMap<>();
+
+        int totalAttackCount = RANDOM.nextInt(500) + 50;
+        long firstSeenTs = System.currentTimeMillis() - RANDOM.nextInt(604800000);
+        long lastSeenTs = System.currentTimeMillis() - RANDOM.nextInt(3600000);
+
+        Map<String, Object> attackerProfile = new LinkedHashMap<>();
+        attackerProfile.put("ip", ip);
+        attackerProfile.put("asn", 12345 + RANDOM.nextInt(10));
+        attackerProfile.put("country", ip.substring(0, 2).hashCode() % 2 == 0 ? "CN" : "US");
+        attackerProfile.put("isp", "Example ISP");
+        attackerProfile.put("first_seen_ts", firstSeenTs);
+        attackerProfile.put("last_seen_ts", lastSeenTs);
+        attackerProfile.put("total_attack_count", totalAttackCount);
+
+        Map<String, Integer> attackTypeCounts = new LinkedHashMap<>();
+        int mainPhaseIndex = Math.min(triggeredPhases.size() - 1, RANDOM.nextInt(triggeredPhases.size()));
+        String mainAttackType = ATTACK_RULES_BY_PHASE[mainPhaseIndex][RANDOM.nextInt(ATTACK_RULES_BY_PHASE[mainPhaseIndex].length)];
+        attackTypeCounts.put(mainAttackType, totalAttackCount * 60 / 100);
+        attackTypeCounts.put(ATTACK_TYPE_NAMES[RANDOM.nextInt(ATTACK_TYPE_NAMES.length)], totalAttackCount * 25 / 100);
+        attackTypeCounts.put(ATTACK_TYPE_NAMES[RANDOM.nextInt(ATTACK_TYPE_NAMES.length)], totalAttackCount * 15 / 100);
+        attackerProfile.put("attack_types", attackTypeCounts);
+
+        attackerProfile.put("threat_level", THREAT_LEVELS[RANDOM.nextInt(THREAT_LEVELS.length)]);
+
+        result.put("attacker_profile", attackerProfile);
+
+        List<Map<String, Object>> relatedAttackers = new ArrayList<>();
+        int relatedCount = RANDOM.nextInt(3) + 1;
+        for (int i = 0; i < relatedCount; i++) {
+            Map<String, Object> related = new LinkedHashMap<>();
+            String relatedIp = "10.0." + RANDOM.nextInt(256) + "." + RANDOM.nextInt(256);
+            related.put("ip", relatedIp);
+            related.put("similarity", 0.5 + RANDOM.nextDouble() * 0.5);
+
+            List<String> reasons = new ArrayList<>();
+            if (RANDOM.nextBoolean()) reasons.add("same_asn");
+            if (RANDOM.nextBoolean()) reasons.add("same_attack_type");
+            if (RANDOM.nextBoolean()) reasons.add("time_window_overlap");
+            if (reasons.isEmpty()) reasons.add("same_asn");
+            related.put("reasons", reasons);
+
+            relatedAttackers.add(related);
+        }
+        result.put("related_attackers", relatedAttackers);
+
+        return result;
     }
 }

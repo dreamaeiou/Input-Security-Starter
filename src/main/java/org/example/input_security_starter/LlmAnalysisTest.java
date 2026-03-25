@@ -203,7 +203,7 @@ public class LlmAnalysisTest {
             System.out.println("  │ 会话数: " + alert.getSessionCount() + " | 事件数: " + alert.getTotalEvents());
             System.out.println("  │ 攻击阶段: " + alert.getAttackPhases());
             System.out.println("  │ 攻击类型: " + alert.getAttackTypes());
-            
+
             if (alert.getIpIntelligence() != null) {
                 AbuseIpDbClient.IpIntelligence intel = alert.getIpIntelligence();
                 System.out.println("  │ IP情报:");
@@ -212,7 +212,32 @@ public class LlmAnalysisTest {
                 System.out.println("  │   - ISP: " + intel.getIsp());
                 System.out.println("  │   - TOR: " + (intel.isTor() ? "是" : "否"));
             }
-            
+
+            if (alert.getAsn() != null || alert.getProfileAttackCount() > 0) {
+                System.out.println("  │ 攻击者画像:");
+                if (alert.getAsn() != null) {
+                    System.out.println("  │   - ASN: " + alert.getAsn());
+                }
+                if (alert.getCountry() != null && !alert.getCountry().isEmpty()) {
+                    System.out.println("  │   - 国家: " + alert.getCountry());
+                }
+                if (alert.getProfileAttackCount() > 0) {
+                    System.out.println("  │   - 累计攻击次数: " + alert.getProfileAttackCount());
+                }
+            }
+
+            if (alert.getRelatedIps() != null && !alert.getRelatedIps().isEmpty()) {
+                System.out.println("  │ 关联攻击者 (" + alert.getRelatedIps().size() + "):");
+                int count = 0;
+                for (String relatedIp : alert.getRelatedIps()) {
+                    if (count++ >= 5) {
+                        System.out.println("  │   ... 还有 " + (alert.getRelatedIps().size() - count + 1) + " 个");
+                        break;
+                    }
+                    System.out.println("  │   - " + relatedIp);
+                }
+            }
+
             if (!alert.getTopPayloads().isEmpty()) {
                 System.out.println("  │ 关键Payload:");
                 int payloadCount = Math.min(3, alert.getTopPayloads().size());
@@ -386,18 +411,45 @@ public class LlmAnalysisTest {
         System.out.println("\n--- 分析摘要 ---");
         System.out.println(report.getSummary());
 
-        if (!report.getRecommendations().isEmpty()) {
+        System.out.println("\n--- 攻击者画像 ---");
+        System.out.println("技能等级: " + defaultText(report.getAttackerSkillLevel(), "未知"));
+        System.out.println("自动化程度: " + defaultText(report.getAutomationType(), "未知"));
+        System.out.println("主要意图: " + defaultText(report.getAttackerIntent(), "未知"));
+        System.out.println("攻击模式: " + defaultText(report.getAttackerPattern(), "未知"));
+        if (report.getAttackerIntentConfidence() > 0) {
+            System.out.println("意图置信度: " + Math.round(report.getAttackerIntentConfidence() * 100) + "%");
+        }
+
+        List<AnalysisReport.PeerAttacker> peerAttackers = report.getPeerAttackers();
+        if (peerAttackers != null && !peerAttackers.isEmpty()) {
+            System.out.println("\n--- 关联攻击者 ---");
+            int peerLimit = Math.min(5, peerAttackers.size());
+            for (int i = 0; i < peerLimit; i++) {
+                AnalysisReport.PeerAttacker peer = peerAttackers.get(i);
+                String relation = peer.getRelationship() == null ? "unknown" : peer.getRelationship();
+                int confidence = (int) Math.round(Math.max(0, Math.min(1, peer.getConfidence())) * 100.0);
+                System.out.println(
+                    (i + 1) + ". " + defaultText(peer.getIp(), "unknown")
+                        + " | relationship=" + relation
+                        + " | confidence=" + confidence + "%"
+                );
+            }
+        }
+
+        List<String> recommendations = report.getRecommendations() == null ? new ArrayList<String>() : report.getRecommendations();
+        if (!recommendations.isEmpty()) {
             System.out.println("\n--- 防御建议 ---");
-            for (int i = 0; i < report.getRecommendations().size(); i++) {
-                String recommendation = report.getRecommendations().get(i);
+            for (int i = 0; i < recommendations.size(); i++) {
+                String recommendation = recommendations.get(i);
                 recommendation = recommendation == null ? "" : recommendation.trim().replaceAll("\\s+", " ");
                 System.out.println((i + 1) + ". " + recommendation);
             }
         }
 
-        if (!report.getKeyIndicators().isEmpty()) {
+        List<String> keyIndicators = report.getKeyIndicators() == null ? new ArrayList<String>() : report.getKeyIndicators();
+        if (!keyIndicators.isEmpty()) {
             System.out.println("\n--- 关键指标 ---");
-            System.out.println(String.join(", ", report.getKeyIndicators()));
+            System.out.println(String.join(", ", keyIndicators));
         }
 
         System.out.println("\n--- 完整分析报告 ---");
@@ -442,6 +494,13 @@ public class LlmAnalysisTest {
             value = System.getProperty(key);
         }
         return (value != null && !value.isEmpty()) ? value : defaultValue;
+    }
+
+    private static String defaultText(String value, String fallback) {
+        if (value == null || value.trim().isEmpty()) {
+            return fallback;
+        }
+        return value.trim();
     }
     
     private static void loadEnvFile() {

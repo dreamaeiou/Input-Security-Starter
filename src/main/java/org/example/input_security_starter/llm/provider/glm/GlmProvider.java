@@ -31,6 +31,7 @@ public class GlmProvider implements LlmProvider {
 
     private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
     private volatile long circuitOpenUntilMs = 0L;
+    private volatile String lastFailureReason = null;
     private final Deque<Long> requestTimestamps = new ArrayDeque<Long>();
     private final Object rateLimitLock = new Object();
 
@@ -105,37 +106,46 @@ public class GlmProvider implements LlmProvider {
         return config;
     }
 
+    @Override
+    public String getLastFailureReason() {
+        return lastFailureReason;
+    }
+
     private String buildAggregatedAnalysisPrompt(String aggregatedJson) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("You are an enterprise SOC analyst. Analyze only from the provided JSON facts.\n");
+        prompt.append("You are an enterprise SOC analyst. Analyze only from provided JSON facts.\n");
         prompt.append("Output rules:\n");
-        prompt.append("1) Return exactly one JSON object, no markdown fences, no extra text.\n");
+        prompt.append("1) Return exactly one JSON object. No markdown fences. No extra text.\n");
         prompt.append("2) All human-readable strings must be Simplified Chinese.\n");
-        prompt.append("3) Do not fabricate assets, timelines, counts, or indicators.\n");
+        prompt.append("3) Do not fabricate assets, timelines, counts, confidence, or indicators.\n");
+        prompt.append("4) You MUST use aggregated_alerts[*].profile_context and aggregated_alerts[*].related_ips to infer peer_attackers.\n");
         prompt.append("Required schema:\n");
         prompt.append("{\n");
-        prompt.append("  \\\"summary\\\": \\\"80-220字，必须包含统计事实\\\",\n");
+        prompt.append("  \\\"summary\\\": \\\"80-220字，包含关键统计事实\\\",\n");
         prompt.append("  \\\"risk_score\\\": 0,\n");
         prompt.append("  \\\"risk_level\\\": \\\"low|medium|high\\\",\n");
-        prompt.append("  \\\"attack_narrative\\\": \\\"必须包含攻击阶段、攻击类型、目标URL和结论\\\",\n");
+        prompt.append("  \\\"attack_narrative\\\": \\\"包含攻击阶段、攻击类型、目标URL与结论\\\",\n");
         prompt.append("  \\\"attack_phases\\\": [\\\"最多6项\\\"],\n");
         prompt.append("  \\\"attack_types\\\": [\\\"最多8项\\\"],\n");
         prompt.append("  \\\"target_urls\\\": [\\\"最多8项\\\"],\n");
-        prompt.append("  \\\"recommendations\\\": [\\\"固定5条，必须以[BLOCK]/[PATCH]/[MONITOR]/[REVIEW]/[IR]开头\\\"],\n");
-        prompt.append("  \\\"verdict\\\": {\\\"is_attack\\\": true, \\\"confidence\\\": 0.0-1.0, \\\"classification\\\": \\\"...\\\"},\n");
-        prompt.append("  \\\"attacker\\\": {\\\"skill_level\\\": \\\"novice|intermediate|advanced\\\", \\\"automation\\\": \\\"manual|semi_auto|fully_auto\\\", \\\"intent\\\": \\\"reconnaissance|exploitation|exfiltration|lateral_movement\\\"},\n");
-        prompt.append("  \\\"key_indicators\\\": [\\\"最多10项，优先公网IP、攻击类型、目标URL\\\"]\n");
+        prompt.append("  \\\"recommendations\\\": [\\\"固定5项，分别以[BLOCK]/[PATCH]/[MONITOR]/[REVIEW]/[IR]开头\\\"],\n");
+        prompt.append("  \\\"verdict\\\": {\\\"is_attack\\\": true, \\\"confidence\\\": 0.0, \\\"classification\\\": \\\"...\\\"},\n");
+        prompt.append("  \\\"attacker\\\": {\\\"skill_level\\\": \\\"novice|intermediate|advanced\\\", \\\"automation\\\": \\\"manual|semi_auto|fully_auto\\\", \\\"intent\\\": \\\"reconnaissance|exploitation|exfiltration|lateral_movement\\\", \\\"pattern\\\": \\\"...\\\", \\\"intent_confidence\\\": 0.0},\n");
+        prompt.append("  \\\"peer_attackers\\\": [{\\\"ip\\\": \\\"1.2.3.4\\\", \\\"relationship\\\": \\\"same_asn|same_attack_type|same_time_window|unknown\\\", \\\"confidence\\\": 0.0}],\n");
+        prompt.append("  \\\"key_indicators\\\": [\\\"最多10项，优先公网IP/攻击类型/目标URL\\\"]\n");
         prompt.append("}\n");
         prompt.append("Constraints:\n");
-        prompt.append("- If a fact is unavailable, use \\\"未知\\\".\n");
-        prompt.append("- Recommendations must map to observed attack types or target URLs.\n");
-        prompt.append("- Prefer public routable IPs in key_indicators when available.\n\n");
+        prompt.append("- If a field is unavailable, use \\\"未知\\\" for text, [] for arrays, and 0 for numbers.\n");
+        prompt.append("- intent_confidence and peer_attackers[*].confidence must be between 0 and 1.\n");
+        prompt.append("- peer_attackers MUST be populated from related_ips in input JSON. Each peer_attacker entry MUST have ip, relationship (inferred from profile_context), and confidence (0.0-1.0).\n");
+        prompt.append("- If related_ips contains entries, you MUST create at least 1 peer_attacker entry. Never return empty peer_attackers array when related_ips is present.\n");
+        prompt.append("- Recommendations must map to observed attack types or target URLs.\n\n");
         prompt.append("Input aggregated JSON:\n");
         prompt.append(aggregatedJson);
         prompt.append("\n");
         return prompt.toString();
     }
-@SuppressWarnings("unchecked")
+    @SuppressWarnings("unchecked")
     private String buildAnalysisPrompt(List<String> alertLogs, Map<String, Object> ipIntelligence) {
         StringBuilder prompt = new StringBuilder();
         prompt.append("You are a SOC analyst. Analyze attack-chain alerts and provide a concise investigation report.\n");
@@ -151,16 +161,19 @@ public class GlmProvider implements LlmProvider {
 
     private String sendRequest(String prompt) {
         if (prompt == null || prompt.isEmpty()) {
+            lastFailureReason = "empty_prompt";
             return null;
         }
 
         long now = System.currentTimeMillis();
         if (now < circuitOpenUntilMs) {
+            lastFailureReason = "circuit_open";
             log.warn("Circuit breaker is open until {}. Request skipped.", circuitOpenUntilMs);
             return null;
         }
 
         if (!tryAcquireRateLimitSlot(now)) {
+            lastFailureReason = "rate_limited";
             log.warn("Rate limit reached ({} requests/min). Request rejected.", config.getMaxRequestsPerMinute());
             return null;
         }
@@ -183,6 +196,7 @@ public class GlmProvider implements LlmProvider {
                 }
 
                 onRequestFailure("http_status_" + result.statusCode);
+                lastFailureReason = "http_status_" + result.statusCode;
                 log.error("GLM API returned non-success status {}. body={}", result.statusCode, abbreviate(result.body));
                 return null;
             } catch (IOException ioe) {
@@ -192,15 +206,18 @@ public class GlmProvider implements LlmProvider {
                     continue;
                 }
                 onRequestFailure("network_exception");
+                lastFailureReason = "network_exception";
                 log.error("GLM request failed after retries: {}", ioe.getMessage());
                 return null;
             } catch (Exception e) {
                 onRequestFailure("unexpected_exception");
+                lastFailureReason = "unexpected_exception";
                 log.error("Unexpected GLM request failure: {}", e.getMessage(), e);
                 return null;
             }
         }
 
+        lastFailureReason = "unknown_failure";
         return null;
     }
 
@@ -250,6 +267,7 @@ public class GlmProvider implements LlmProvider {
     private void onRequestSuccess() {
         consecutiveFailures.set(0);
         circuitOpenUntilMs = 0L;
+        lastFailureReason = null;
     }
 
     private void onRequestFailure(String reason) {
@@ -310,13 +328,24 @@ public class GlmProvider implements LlmProvider {
             if (root.has("choices") && root.get("choices").isArray() && root.get("choices").size() > 0) {
                 JsonNode message = root.get("choices").get(0).get("message");
                 if (message != null && message.has("content")) {
-                    return message.get("content").asText();
+                    String content = message.get("content").asText();
+                    if (content != null && !content.trim().isEmpty()) {
+                        lastFailureReason = null;
+                        return content;
+                    }
                 }
             }
+            lastFailureReason = "response_parse_empty_content";
             return null;
         } catch (Exception e) {
             log.warn("Failed to parse GLM response as JSON: {}", e.getMessage());
-            return extractContentFallback(jsonResponse);
+            String fallback = extractContentFallback(jsonResponse);
+            if (fallback == null || fallback.trim().isEmpty()) {
+                lastFailureReason = "response_parse_failed";
+                return null;
+            }
+            lastFailureReason = null;
+            return fallback;
         }
     }
 
@@ -401,4 +430,5 @@ public class GlmProvider implements LlmProvider {
         }
     }
 }
+
 

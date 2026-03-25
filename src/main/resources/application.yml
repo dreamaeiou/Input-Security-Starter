@@ -1,107 +1,127 @@
+# ==================== Input Security Starter 配置 ====================
+# 官方文档: https://github.com/example/input-security-starter
+
 input-security:
-  enabled: true
-  mode: monitor
-  
+  # ------------------- 基础配置 -------------------
+  enabled: true                    # 是否启用输入安全检测 (true/false)
+  mode: monitor                    # 运行模式: monitor=仅记录日志, block=拦截并返回403
+
+  # ------------------- 路径过滤 -------------------
+  # 白名单: 匹配这些路径的请求将被跳过安全检测
   exclude-paths:
-    - /favicon.ico
-    - /static/**
-    - /resources/**
-    - /public/**
-    - /css/**
-    - /js/**
-    - /images/**
-    - /lib/**
-    - /webjars/**
+    - /favicon.ico                 # 网站图标
+    - /static/**                   # 静态资源目录
+    - /resources/**                # 资源目录
+    - /public/**                   # 公共资源目录
+    - /css/**                      # 样式表目录
+    - /js/**                       # JavaScript目录
+    - /images/**                   # 图片目录
+    - /lib/**                      # 库目录
+    - /webjars/**                  # WebJar依赖目录
 
-  log-file-path: security-events.log
-  max-log-size-mb: 50
-  max-log-files: 10
-  async-log-enabled: true
+  # ------------------- 日志配置 -------------------
+  log-file-path: security-events.log    # 安全事件日志文件路径 (JSON Lines格式)
+  max-log-size-mb: 50                   # 单个日志文件最大大小 (MB)
+  max-log-files: 10                     # 保留的日志文件数量 (日志轮转)
+  async-log-enabled: true               # 是否启用异步日志写入 (推荐开启,避免阻塞请求)
 
-  filter-order: -100
-  enable-ui: true
-  
+  # ------------------- Filter配置 -------------------
+  filter-order: -100              # Filter执行顺序, 负数表示优先执行
+  enable-ui: true                 # 是否启用Web测试界面 (/input-security-view/*)
+
+  # ------------------- 攻击链追踪配置 -------------------
   attack-chain:
-    enabled: true
-    max-sessions: 10000
-    session-timeout-minutes: 30
-    max-events-per-session: 20
-    alert-threshold: 10
-    min-phases-for-chain: 3
-    alert-log-path: attack-chain-alerts.log
+    enabled: true                  # 是否启用攻击链追踪功能
+    max-sessions: 10000            # 最大同时追踪的会话数 (超出后LRU淘汰)
+    session-timeout-minutes: 30   # 会话超时时间 (分钟)
+    max-events-per-session: 20     # 单个会话最大事件数 (滑动窗口)
+    alert-threshold: 10            # 触发告警的事件数量阈值
+    min-phases-for-chain: 3        # 检测攻击链所需的最小攻击阶段数
+                                    # Kill Chain: RECON→DELIVERY→EXPLOITATION→INSTALLATION→C2→ACTIONS
+    alert-log-path: attack-chain-alerts.log  # 攻击链告警日志路径
 
+  # ------------------- LLM智能分析配置 -------------------
   llm:
-    enabled: true
-    provider: glm
-    max-alerts-per-analysis: 50
-    analysis-timeout-ms: 90000
-    max-prompt-chars: 24000
-    max-ips-per-analysis: 50
-    max-events-per-ip: 50
-    abuse-ip-db-api-key: "${ABUSEIPDB_API_KEY:}"
-    abuse-ip-db-api-url: "https://api.abuseipdb.com/api/v2/check"
-    abuse-ip-db-max-age-days: 90
-    ip-log-dir: "."
-    
+    enabled: true                  # 是否启用LLM攻击链分析
+    provider: glm                  # LLM提供商: glm=智谱GLM, aliyun-bailian=阿里云百炼
+    max-alerts-per-analysis: 50   # 单次分析最大处理的告警数量
+    analysis-timeout-ms: 100000    # LLM分析超时时间 (毫秒)
+    max-prompt-chars: 24000        # 最大Prompt字符数 (防止超出LLM上下文限制)
+    max-ips-per-analysis: 50       # 单次分析最大IP数量
+    max-events-per-ip: 50          # 单个IP最大事件数
+    abuse-ip-db-api-key: "${ABUSEIPDB_API_KEY:}"        # AbuseIPDB API密钥 (可选)
+    abuse-ip-db-api-url: "https://api.abuseipdb.com/api/v2/check"  # AbuseIPDB API地址
+    abuse-ip-db-max-age-days: 90   # IP情报有效期 (天)
+    ip-log-dir: "."                # IP日志目录
+
+    # ------------------- 高级HTTP配置 -------------------
     advanced:
-      connect-timeout-ms: 30000
-      read-timeout-ms: 300000
-      max-retries: 2
-      retry-base-delay-ms: 500
-      retry-max-delay-ms: 8000
-      circuit-failure-threshold: 5
-      circuit-open-window-ms: 60000
-      requests-per-minute: 60
-    
+      connect-timeout-ms: 30000    # HTTP连接超时 (毫秒)
+      read-timeout-ms: 300000      # HTTP读取超时 (毫秒)
+      max-retries: 2               # 最大重试次数
+      retry-base-delay-ms: 500     # 基础重试延迟 (毫秒)
+      retry-max-delay-ms: 8000     # 最大重试延迟 (毫秒)
+      circuit-failure-threshold: 5 # 熔断失败阈值 (次)
+      circuit-open-window-ms: 60000 # 熔断窗口时间 (毫秒)
+      requests-per-minute: 60      # 限速: 每分钟最大请求数
+
+    # ------------------- 智谱GLM配置 -------------------
     glm:
-      api-url: "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-      api-key: "${GLM_API_KEY:}"
-      model: glm-4-flash
-    
+      api-url: "https://open.bigmodel.cn/api/paas/v4/chat/completions"  # GLM API地址
+      api-key: "${GLM_API_KEY:}"   # GLM API密钥 (建议使用环境变量)
+      model: glm-4-flash            # GLM模型: glm-4-flash=快速便宜, glm-4=效果更好
+
+    # ------------------- 阿里云百炼配置 -------------------
     aliyun-bailian:
       api-url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-      api-key: "${ALIYUN_BAILIAN_API_KEY:}"
-      model: qwen-plus
-    
+      api-key: "${ALIYUN_BAILIAN_API_KEY:}"  # 阿里云API密钥
+      model: qwen-plus              # 阿里云模型: qwen-plus=效果好
+
+    # ------------------- 自动分析配置 -------------------
     auto-analysis:
-      enabled: true
-      alert-threshold: 50
-      count-check-interval-ms: 60000
-      schedule-cron: "0 0 2 * * ?"
-      schedule-interval-hours: 24
-    
+      enabled: true                 # 是否启用定时自动分析
+      alert-threshold: 50           # 自动触发的告警阈值
+      count-check-interval-ms: 60000 # 检查间隔 (毫秒)
+      schedule-cron: "0 0 2 * * ?"  # Cron表达式: 每天凌晨2点执行
+      schedule-interval-hours: 24   # 定时分析间隔 (小时)
+
+    # ------------------- 飞书通知配置 -------------------
     feishu:
-      enabled: true
-      webhook-url: "https://open.feishu.cn/open-apis/im/v1/messages"
-      app-id: "${FEISHU_APP_ID:}"
-      app-secret: "${FEISHU_APP_SECRET:}"
-      receive-id-type: "${FEISHU_RECEIVE_ID_TYPE:chat_id}"
-      receive-id: "${FEISHU_RECEIVE_ID:}"
-    
+      enabled: true                 # 是否启用飞书通知
+      webhook-url: "https://open.feishu.cn/open-apis/im/v1/messages"  # 飞书Webhook地址
+      app-id: "${FEISHU_APP_ID:}"   # 飞书应用AppID
+      app-secret: "${FEISHU_APP_SECRET:}"  # 飞书应用AppSecret
+      receive-id-type: "${FEISHU_RECEIVE_ID_TYPE:chat_id}"  # 接收者类型: chat_id=群, user_id=用户
+      receive-id: "${FEISHU_RECEIVE_ID:}"  # 接收者ID (群ID或用户ID)
+
+    # ------------------- 企业微信通知配置 -------------------
     wecom:
-      enabled: false
-      webhook-url: "${WECOM_WEBHOOK_URL:}"
-      corp-id: "${WECOM_CORP_ID:}"
-      corp-secret: "${WECOM_CORP_SECRET:}"
-      agent-id: "${WECOM_AGENT_ID:}"
-      to-user: "${WECOM_TO_USER:@all}"
-      to-party: "${WECOM_TO_PARTY:}"
-      to-tag: "${WECOM_TO_TAG:}"
-    
+      enabled: false                # 是否启用企业微信通知
+      webhook-url: "${WECOM_WEBHOOK_URL:}"  # 企业微信Webhook地址
+      corp-id: "${WECOM_CORP_ID:}"   # 企业ID
+      corp-secret: "${WECOM_CORP_SECRET:}"  # 应用Secret
+      agent-id: "${WECOM_AGENT_ID:}" # 应用AgentID
+      to-user: "${WECOM_TO_USER:@all}"  # 接收成员 (UserID列表, @all=全部)
+      to-party: "${WECOM_TO_PARTY:}" # 接收部门 (DeptID列表)
+      to-tag: "${WECOM_TO_TAG:}"    # 接收标签 (TagID列表)
+
+    # ------------------- 钉钉通知配置 -------------------
     dingtalk:
-      enabled: false
-      webhook-url: "${DINGTALK_WEBHOOK_URL:}"
-      app-key: "${DINGTALK_APP_KEY:}"
-      app-secret: "${DINGTALK_APP_SECRET:}"
-      agent-id: "${DINGTALK_AGENT_ID:}"
-      userid-list: "${DINGTALK_USERID_LIST:}"
-      dept-id-list: "${DINGTALK_DEPT_ID_LIST:}"
-      to-all-user: "${DINGTALK_TO_ALL_USER:true}"
-  
+      enabled: false                # 是否启用钉钉通知
+      webhook-url: "${DINGTALK_WEBHOOK_URL:}"  # 钉钉Webhook地址
+      app-key: "${DINGTALK_APP_KEY:}"  # 钉钉应用Key
+      app-secret: "${DINGTALK_APP_SECRET:}"  # 钉钉应用Secret
+      agent-id: "${DINGTALK_AGENT_ID:}"  # 钉钉应用AgentID
+      userid-list: "${DINGTALK_USERID_LIST:}"  # 接收用户ID列表
+      dept-id-list: "${DINGTALK_DEPT_ID_LIST:}"  # 接收部门ID列表
+      to-all-user: "${DINGTALK_TO_ALL_USER:true}"  # 是否发送给全部用户
+
+
+# ==================== Spring Boot 基础配置 ====================
 
 spring:
   application:
-    name: Input Security SDK
+    name: Input Security SDK      # 应用名称
 
 server:
-  port: 9090
+  port: 9090                      # 服务器端口

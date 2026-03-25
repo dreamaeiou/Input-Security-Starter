@@ -30,6 +30,14 @@ public class AggregatedAlert {
     private Set<String> errorMessages;
     private int successCount;
     private int failureCount;
+    private Integer asn;
+    private String country;
+    private String isp;
+    private long profileAttackCount;
+    private long firstSeenTs;
+    private long lastSeenTs;
+    private String threatLevel;
+    private Set<String> relatedIps;
 
     public AggregatedAlert() {
         this.attackPhases = new HashSet<>();
@@ -42,6 +50,7 @@ public class AggregatedAlert {
         this.statusCodes = new HashMap<>();
         this.paramNames = new HashSet<>();
         this.errorMessages = new HashSet<>();
+        this.relatedIps = new HashSet<>();
     }
 
     public Map<String, Object> toMap() {
@@ -126,6 +135,36 @@ public class AggregatedAlert {
         if (!errorMessages.isEmpty()) {
             List<String> errors = new ArrayList<>(errorMessages);
             result.put("error_samples", errors.size() > 3 ? errors.subList(0, 3) : errors);
+        }
+
+        Map<String, Object> profileContext = new HashMap<>();
+        if (asn != null) {
+            profileContext.put("asn", asn);
+        }
+        if (country != null && !country.isEmpty()) {
+            profileContext.put("country", country);
+        }
+        if (isp != null && !isp.isEmpty()) {
+            profileContext.put("isp", isp);
+        }
+        if (profileAttackCount > 0) {
+            profileContext.put("total_attack_count", profileAttackCount);
+        }
+        if (firstSeenTs > 0) {
+            profileContext.put("first_seen_ts", firstSeenTs);
+        }
+        if (lastSeenTs > 0) {
+            profileContext.put("last_seen_ts", lastSeenTs);
+        }
+        if (threatLevel != null && !threatLevel.isEmpty()) {
+            profileContext.put("threat_level", threatLevel);
+        }
+        if (!profileContext.isEmpty()) {
+            result.put("profile_context", profileContext);
+        }
+
+        if (!relatedIps.isEmpty()) {
+            result.put("related_ips", new ArrayList<>(relatedIps));
         }
         
         return result;
@@ -219,6 +258,27 @@ public class AggregatedAlert {
     
     public int getSuccessCount() { return successCount; }
     public int getFailureCount() { return failureCount; }
+
+    public Integer getAsn() { return asn; }
+    public void setAsn(Integer asn) { this.asn = asn; }
+    public String getCountry() { return country; }
+    public void setCountry(String country) { this.country = country; }
+    public String getIsp() { return isp; }
+    public void setIsp(String isp) { this.isp = isp; }
+    public long getProfileAttackCount() { return profileAttackCount; }
+    public void setProfileAttackCount(long profileAttackCount) { this.profileAttackCount = profileAttackCount; }
+    public long getFirstSeenTs() { return firstSeenTs; }
+    public void setFirstSeenTs(long firstSeenTs) { this.firstSeenTs = firstSeenTs; }
+    public long getLastSeenTs() { return lastSeenTs; }
+    public void setLastSeenTs(long lastSeenTs) { this.lastSeenTs = lastSeenTs; }
+    public String getThreatLevel() { return threatLevel; }
+    public void setThreatLevel(String threatLevel) { this.threatLevel = threatLevel; }
+    public Set<String> getRelatedIps() { return relatedIps; }
+    public void addRelatedIp(String relatedIp) {
+        if (relatedIp != null && !relatedIp.trim().isEmpty()) {
+            this.relatedIps.add(relatedIp.trim());
+        }
+    }
 
     public static class TimeRange {
         private String start;

@@ -136,6 +136,51 @@ public class AlertAggregator {
                         aggregated.addAttackChain(chainSummary);
                     }
                 }
+
+                if (root.has("attacker_profile") && root.get("attacker_profile").isObject()) {
+                    JsonNode profile = root.get("attacker_profile");
+                    if (profile.has("asn") && aggregated.getAsn() == null) {
+                        int asn = readInt(profile.get("asn"), 0);
+                        if (asn > 0) {
+                            aggregated.setAsn(asn);
+                        }
+                    }
+                    if (profile.has("country") && (aggregated.getCountry() == null || aggregated.getCountry().isEmpty())) {
+                        aggregated.setCountry(profile.get("country").asText());
+                    }
+                    if (profile.has("isp") && (aggregated.getIsp() == null || aggregated.getIsp().isEmpty())) {
+                        aggregated.setIsp(profile.get("isp").asText());
+                    }
+                    if (profile.has("total_attack_count")) {
+                        long totalAttackCount = readLong(profile.get("total_attack_count"), 0L);
+                        if (totalAttackCount > aggregated.getProfileAttackCount()) {
+                            aggregated.setProfileAttackCount(totalAttackCount);
+                        }
+                    }
+                    if (profile.has("first_seen_ts")) {
+                        long firstSeen = readLong(profile.get("first_seen_ts"), 0L);
+                        if (firstSeen > 0 && (aggregated.getFirstSeenTs() == 0L || firstSeen < aggregated.getFirstSeenTs())) {
+                            aggregated.setFirstSeenTs(firstSeen);
+                        }
+                    }
+                    if (profile.has("last_seen_ts")) {
+                        long lastSeen = readLong(profile.get("last_seen_ts"), 0L);
+                        if (lastSeen > aggregated.getLastSeenTs()) {
+                            aggregated.setLastSeenTs(lastSeen);
+                        }
+                    }
+                    if (profile.has("threat_level") && (aggregated.getThreatLevel() == null || aggregated.getThreatLevel().isEmpty())) {
+                        aggregated.setThreatLevel(profile.get("threat_level").asText());
+                    }
+                }
+
+                if (root.has("related_attackers") && root.get("related_attackers").isArray()) {
+                    for (JsonNode related : root.get("related_attackers")) {
+                        if (related.has("ip")) {
+                            aggregated.addRelatedIp(related.get("ip").asText());
+                        }
+                    }
+                }
                 
             } catch (Exception e) {
                 log.debug("Failed to parse alert log for aggregation: {}", e.getMessage());
@@ -190,6 +235,34 @@ public class AlertAggregator {
                 limit, aggregatedList.size(), totalSessions, totalEvents);
 
         return result;
+    }
+
+    private int readInt(JsonNode node, int defaultValue) {
+        if (node == null || node.isNull()) {
+            return defaultValue;
+        }
+        if (node.isNumber()) {
+            return node.asInt(defaultValue);
+        }
+        try {
+            return Integer.parseInt(node.asText().trim());
+        } catch (Exception e) {
+            return defaultValue;
+        }
+    }
+
+    private long readLong(JsonNode node, long defaultValue) {
+        if (node == null || node.isNull()) {
+            return defaultValue;
+        }
+        if (node.isNumber()) {
+            return node.asLong(defaultValue);
+        }
+        try {
+            return Long.parseLong(node.asText().trim());
+        } catch (Exception e) {
+            return defaultValue;
+        }
     }
 
     private RiskScoreResult calculateRiskScore(AggregatedAlert aggregated) {

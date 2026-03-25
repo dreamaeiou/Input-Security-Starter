@@ -363,7 +363,16 @@ public class InputSecurityProperties {
         private int sessionTimeoutMinutes = 30;
         private int maxEventsPerSession = 20;
         private int minPhasesForChain = 2;
+        private int riskScoreThreshold = 80;
         private String alertLogPath = "attack-chain-alerts.log";
+        private boolean attackerIndexEnabled = true;
+        private int maxProfiles = 10000;
+        private int profileTtlDays = 7;
+        private int evictionBatchSize = 100;
+        private int statsUpdateInterval = 100;
+        private int maxRecentSessions = 20;
+        private int relatedTimeWindowMinutes = 60;
+        private int maxRelatedAttackers = 10;
 
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -375,8 +384,26 @@ public class InputSecurityProperties {
         public void setMaxEventsPerSession(int maxEventsPerSession) { this.maxEventsPerSession = maxEventsPerSession; }
         public int getMinPhasesForChain() { return minPhasesForChain; }
         public void setMinPhasesForChain(int minPhasesForChain) { this.minPhasesForChain = minPhasesForChain; }
+        public int getRiskScoreThreshold() { return riskScoreThreshold; }
+        public void setRiskScoreThreshold(int riskScoreThreshold) { this.riskScoreThreshold = riskScoreThreshold; }
         public String getAlertLogPath() { return alertLogPath; }
         public void setAlertLogPath(String alertLogPath) { this.alertLogPath = alertLogPath; }
+        public boolean isAttackerIndexEnabled() { return attackerIndexEnabled; }
+        public void setAttackerIndexEnabled(boolean attackerIndexEnabled) { this.attackerIndexEnabled = attackerIndexEnabled; }
+        public int getMaxProfiles() { return maxProfiles; }
+        public void setMaxProfiles(int maxProfiles) { this.maxProfiles = maxProfiles; }
+        public int getProfileTtlDays() { return profileTtlDays; }
+        public void setProfileTtlDays(int profileTtlDays) { this.profileTtlDays = profileTtlDays; }
+        public int getEvictionBatchSize() { return evictionBatchSize; }
+        public void setEvictionBatchSize(int evictionBatchSize) { this.evictionBatchSize = evictionBatchSize; }
+        public int getStatsUpdateInterval() { return statsUpdateInterval; }
+        public void setStatsUpdateInterval(int statsUpdateInterval) { this.statsUpdateInterval = statsUpdateInterval; }
+        public int getMaxRecentSessions() { return maxRecentSessions; }
+        public void setMaxRecentSessions(int maxRecentSessions) { this.maxRecentSessions = maxRecentSessions; }
+        public int getRelatedTimeWindowMinutes() { return relatedTimeWindowMinutes; }
+        public void setRelatedTimeWindowMinutes(int relatedTimeWindowMinutes) { this.relatedTimeWindowMinutes = relatedTimeWindowMinutes; }
+        public int getMaxRelatedAttackers() { return maxRelatedAttackers; }
+        public void setMaxRelatedAttackers(int maxRelatedAttackers) { this.maxRelatedAttackers = maxRelatedAttackers; }
     }
 
     public enum Mode {
