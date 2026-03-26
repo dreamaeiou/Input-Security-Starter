@@ -53,6 +53,8 @@ public class SecurityEvent {
     private String userAgent;
     /** HTTP 状态码 */
     private Integer statusCode;
+    /** 事件置信度（0~1），用于抑制误报级联 */
+    private double eventConfidence = 1.0d;
 
     /**
      * 构造函数
@@ -98,6 +100,7 @@ public class SecurityEvent {
     public String getRuleLevel() { return ruleLevel; }
     public String getUserAgent() { return userAgent; }
     public Integer getStatusCode() { return statusCode; }
+    public double getEventConfidence() { return eventConfidence; }
     
     public void setIpAddress(String ipAddress) { this.ipAddress = ipAddress; }
     
@@ -179,6 +182,11 @@ public class SecurityEvent {
             event.statusCode = statusCode;
             return this;
         }
+
+        public Builder eventConfidence(double eventConfidence) {
+            event.eventConfidence = clampConfidence(eventConfidence);
+            return this;
+        }
         
         public SecurityEvent build() {
             return event;
@@ -242,6 +250,10 @@ public class SecurityEvent {
         if (statusCode != null) {
             result.put("status_code", statusCode);
         }
+
+        if (eventConfidence > 0.0d) {
+            result.put("event_confidence", roundTo3(eventConfidence));
+        }
         
         return result;
     }
@@ -255,5 +267,22 @@ public class SecurityEvent {
     private String truncate(String str) {
         if (str == null) return null;
         return str.length() > MAX_PAYLOAD_LENGTH ? str.substring(0, MAX_PAYLOAD_LENGTH) + "..." : str;
+    }
+
+    private static double clampConfidence(double value) {
+        if (Double.isNaN(value) || Double.isInfinite(value)) {
+            return 1.0d;
+        }
+        if (value < 0.0d) {
+            return 0.0d;
+        }
+        if (value > 1.0d) {
+            return 1.0d;
+        }
+        return value;
+    }
+
+    private static double roundTo3(double value) {
+        return Math.round(value * 1000.0d) / 1000.0d;
     }
 }

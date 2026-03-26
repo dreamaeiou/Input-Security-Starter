@@ -111,7 +111,7 @@ public class OptimizedRuleEngine {
         if (input == null) return null;
 
         // 首先对原始输入进行匹配
-        MatchResult result = matchWithPriorityDetailed(input);
+        MatchResult result = matchWithPriorityDetailed(input, false);
         if (result != null) {
             return result;
         }
@@ -121,7 +121,7 @@ public class OptimizedRuleEngine {
         
         // 如果规范化后内容有变化，再次匹配
         if (!normalizedInput.equals(input)) {
-            result = matchWithPriorityDetailed(normalizedInput);
+            result = matchWithPriorityDetailed(normalizedInput, true);
             if (result != null) {
                 return result;
             }
@@ -136,7 +136,7 @@ public class OptimizedRuleEngine {
      * @param input 待检测的输入字符串
      * @return 匹配结果详情，未匹配则返回 null
      */
-    private MatchResult matchWithPriorityDetailed(String input) {
+    private MatchResult matchWithPriorityDetailed(String input, boolean normalizedMatch) {
         if (input == null) return null;
         
         // 高优先级规则匹配
@@ -148,7 +148,8 @@ public class OptimizedRuleEngine {
                     rule.level,
                     matcher.start(),
                     matcher.end() - matcher.start(),
-                    matcher.group()
+                    matcher.group(),
+                    normalizedMatch
                 );
             }
         }
@@ -162,7 +163,8 @@ public class OptimizedRuleEngine {
                     rule.level,
                     matcher.start(),
                     matcher.end() - matcher.start(),
-                    matcher.group()
+                    matcher.group(),
+                    normalizedMatch
                 );
             }
         }
@@ -176,7 +178,8 @@ public class OptimizedRuleEngine {
                     rule.level,
                     matcher.start(),
                     matcher.end() - matcher.start(),
-                    matcher.group()
+                    matcher.group(),
+                    normalizedMatch
                 );
             }
         }
@@ -250,13 +253,19 @@ public class OptimizedRuleEngine {
         private final int length;
         /** 匹配到的具体内容 */
         private final String matchedPattern;
+        private final boolean normalizedMatch;
         
         public MatchResult(String ruleName, String level, int position, int length, String matchedPattern) {
+            this(ruleName, level, position, length, matchedPattern, false);
+        }
+
+        public MatchResult(String ruleName, String level, int position, int length, String matchedPattern, boolean normalizedMatch) {
             this.ruleName = ruleName;
             this.level = level;
             this.position = position;
             this.length = length;
             this.matchedPattern = matchedPattern;
+            this.normalizedMatch = normalizedMatch;
         }
         
         public String getRuleName() { return ruleName; }
@@ -264,5 +273,6 @@ public class OptimizedRuleEngine {
         public int getPosition() { return position; }
         public int getLength() { return length; }
         public String getMatchedPattern() { return matchedPattern; }
+        public boolean isNormalizedMatch() { return normalizedMatch; }
     }
 }

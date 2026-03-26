@@ -249,6 +249,46 @@ class LlmStructuredOutputParsingTest {
         }
     }
 
+    @Test
+    void shouldFallbackToAggregationRiskWhenLlmScoreIsAbnormallyLow() throws Exception {
+        File logFile = createHighRiskAlertLog();
+        try {
+            String llmJson =
+                "{"
+                    + "\"summary\":\"检测到可疑访问\","
+                    + "\"risk_score\":10,"
+                    + "\"risk_level\":\"low\","
+                    + "\"attack_narrative\":\"存在异常请求\","
+                    + "\"recommendations\":[\"[BLOCK] 临时封禁来源IP\",\"[PATCH] 修复输入校验\",\"[MONITOR] 监控目标接口\",\"[REVIEW] 复核策略\",\"[IR] 保留取证\"],"
+                    + "\"verdict\":{\"is_attack\":true,\"confidence\":0.85,\"classification\":\"攻击\"},"
+                    + "\"attacker\":{\"skill_level\":\"intermediate\",\"automation\":\"semi_auto\",\"intent\":\"exploitation\"},"
+                    + "\"key_indicators\":[\"8.8.8.8\",\"actions-on-objectives\"]"
+                    + "}";
+
+            LlmAnalysisService service = new LlmAnalysisService(
+                new StaticJsonLlmProvider(llmJson),
+                null,
+                null,
+                logFile.getAbsolutePath(),
+                50,
+                4000,
+                10,
+                5,
+                5000,
+                null
+            );
+
+            AnalysisReport report = service.analyzeAttackChainAlerts(false);
+            assertNotNull(report);
+            assertTrue(report.getRiskScore() >= 50, "risk should fallback to aggregation baseline");
+            assertEquals("degraded", report.getStatus());
+            assertNotNull(report.getErrorMessage());
+            assertTrue(report.getErrorMessage().contains("risk_consistency_guard_triggered"));
+        } finally {
+            logFile.delete();
+        }
+    }
+
     private File createMinimalAlertLog() throws Exception {
         File file = File.createTempFile("llm-structured-output", ".log");
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
@@ -262,6 +302,29 @@ class LlmStructuredOutputParsingTest {
             alert.put("duration_ms", 1200);
             alert.put("ts", System.currentTimeMillis());
             alert.put("events", new Object[]{event("sql-injection", "/api/login", "' OR 1=1 --")});
+            writer.write(OBJECT_MAPPER.writeValueAsString(alert));
+            writer.newLine();
+        }
+        return file;
+    }
+
+    private File createHighRiskAlertLog() throws Exception {
+        File file = File.createTempFile("llm-structured-output-high-risk", ".log");
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
+            Map<String, Object> alert = new HashMap<String, Object>();
+            alert.put("alert_type", "attack_chain_detected");
+            alert.put("session_id", "sess-high-risk");
+            alert.put("client_ip", "8.8.8.8");
+            alert.put("current_phase", "actions");
+            alert.put("triggered_phases", new String[]{"reconnaissance", "delivery", "exploitation", "actions"});
+            alert.put("event_count", 4);
+            alert.put("duration_ms", 2500);
+            alert.put("ts", System.currentTimeMillis());
+            alert.put("events", new Object[]{
+                event("sql-injection", "/api/login", "' OR 1=1 --"),
+                event("command-injection", "/api/admin", "; cat /etc/passwd"),
+                event("actions-on-objectives", "/api/export", "mysqldump -u root -p secret_db > dump.sql")
+            });
             writer.write(OBJECT_MAPPER.writeValueAsString(alert));
             writer.newLine();
         }

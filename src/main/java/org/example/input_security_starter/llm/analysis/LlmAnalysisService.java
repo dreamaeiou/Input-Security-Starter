@@ -50,6 +50,7 @@ public class LlmAnalysisService {
     private static final int DEFAULT_MAX_EVENTS_PER_IP = 50;
     private static final int HIGH_RISK_THRESHOLD = 80;
     private static final int MEDIUM_RISK_THRESHOLD = 50;
+    private static final int RISK_SCORE_GUARD_GAP = 40;
     private static final long DEFAULT_ANALYSIS_TIMEOUT_MS = 90_000L;
     private static final String[] SUMMARY_SECTION_START_MARKERS = new String[]{
         "### \u6267\u884c\u6458\u8981",
@@ -381,6 +382,7 @@ public class LlmAnalysisService {
             }
 
             applyRiskFallbackFromAggregation(report, aggregationResult);
+            applyRiskConsistencyGuard(report, aggregationResult);
             applyConfidenceFallbackFromAggregation(report, aggregationResult);
             normalizeReportToChinese(report);
             enrichReportWithAggregationContext(report, aggregationResult);
@@ -2329,6 +2331,9 @@ public class LlmAnalysisService {
         if ("Analysis timeout after input budgeting".equals(reason)) {
             return "\u5206\u6790\u5728\u8f93\u5165\u9884\u7b97\u5904\u7406\u540e\u8d85\u65f6";
         }
+        if (reason != null && reason.contains("risk_consistency_guard_triggered")) {
+            return "LLM风险分显著低于聚合基线，已触发一致性回退";
+        }
         return reason;
     }
 
@@ -2421,6 +2426,55 @@ public class LlmAnalysisService {
             } else {
                 report.setRiskLevel("low");
             }
+        }
+    }
+
+    private void applyRiskConsistencyGuard(AnalysisReport report, AlertAggregator.AggregationResult aggregationResult) {
+        if (report == null || aggregationResult == null || aggregationResult.getAggregatedAlerts() == null) {
+            return;
+        }
+
+        int maxRisk = 0;
+        for (AggregatedAlert alert : aggregationResult.getAggregatedAlerts()) {
+            if (alert != null) {
+                maxRisk = Math.max(maxRisk, alert.getRiskScore());
+            }
+        }
+
+        int llmRisk = report.getRiskScore();
+        if (llmRisk <= 0 || maxRisk <= 0) {
+            return;
+        }
+
+        if ((maxRisk - llmRisk) <= RISK_SCORE_GUARD_GAP) {
+            return;
+        }
+
+        report.setRiskScore(maxRisk);
+        if (maxRisk >= HIGH_RISK_THRESHOLD) {
+            report.setRiskLevel("high");
+        } else if (maxRisk >= MEDIUM_RISK_THRESHOLD) {
+            report.setRiskLevel("medium");
+        } else {
+            report.setRiskLevel("low");
+        }
+
+        if ("success".equalsIgnoreCase(report.getStatus())) {
+            report.setStatus("degraded");
+        }
+
+        String guardReason = "risk_consistency_guard_triggered";
+        if (!isNotBlank(report.getErrorMessage())) {
+            report.setErrorMessage(guardReason);
+        } else if (!report.getErrorMessage().contains(guardReason)) {
+            report.setErrorMessage(report.getErrorMessage() + "|" + guardReason);
+        }
+
+        String guardMessage = "研判异常：LLM风险分显著低于聚合基线，已回退到聚合风险分。";
+        if (!isNotBlank(report.getSummary())) {
+            report.setSummary(guardMessage);
+        } else if (!report.getSummary().contains("LLM风险分显著低于聚合基线")) {
+            report.setSummary(report.getSummary() + " " + guardMessage);
         }
     }
 

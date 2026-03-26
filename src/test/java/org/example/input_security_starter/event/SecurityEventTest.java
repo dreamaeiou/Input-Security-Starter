@@ -137,4 +137,16 @@ class SecurityEventTest {
         
         assertNull(map.get("payload"));
     }
+
+    @Test
+    @DisplayName("Should include bounded event confidence")
+    void testEventConfidence() {
+        SecurityEvent event = new SecurityEvent.Builder("xss-attack", "<script>", "/api/test", "GET")
+            .eventConfidence(1.5d)
+            .build();
+        Map<String, Object> map = event.toMap();
+
+        assertTrue(event.getEventConfidence() <= 1.0d);
+        assertEquals(1.0d, (Double) map.get("event_confidence"), 0.0001d);
+    }
 }

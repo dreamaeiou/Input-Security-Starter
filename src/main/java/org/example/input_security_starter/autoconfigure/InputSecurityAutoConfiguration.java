@@ -91,6 +91,7 @@ public class InputSecurityAutoConfiguration {
             config.getMinPhasesForChain(),
             config.getRiskScoreThreshold()
         );
+        tracker.setEventConfidenceThreshold(config.getEventConfidenceThreshold());
         tracker.setMaxRelatedAttackers(config.getMaxRelatedAttackers());
 
         if (attackerIndex != null) {
@@ -99,8 +100,9 @@ public class InputSecurityAutoConfiguration {
         
         tracker.setAlertHandler(alert -> handleAlert(alert, config.getAlertLogPath(), alertCounter));
         
-        log.info("AttackChainTracker created with config: maxSessions={}, timeout={}min, riskThreshold={}, attackerIndexEnabled={}",
+        log.info("AttackChainTracker created with config: maxSessions={}, timeout={}min, riskThreshold={}, eventConfidenceThreshold={}, attackerIndexEnabled={}",
                  config.getMaxSessions(), config.getSessionTimeoutMinutes(), config.getRiskScoreThreshold(),
+                 config.getEventConfidenceThreshold(),
                  attackerIndex != null);
         
         return tracker;

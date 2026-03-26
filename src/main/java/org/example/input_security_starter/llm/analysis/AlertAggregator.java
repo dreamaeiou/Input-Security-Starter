@@ -15,6 +15,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 public class AlertAggregator {
 
@@ -23,6 +24,11 @@ public class AlertAggregator {
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
     private static final int HIGH_RISK_THRESHOLD = 80;
     private static final int MEDIUM_RISK_THRESHOLD = 50;
+    private static final int MAX_PAYLOAD_PREVIEW_LENGTH = 128;
+    private static final Pattern PROMPT_INJECTION_KEYWORDS = Pattern.compile(
+        "(?i)\\b(ignore|instruction|instructions|forget|output|respond|assistant|system\\s*prompt|developer\\s*message|return\\s+exactly)\\b"
+    );
+    private static final Pattern LONG_ENGLISH_SENTENCE = Pattern.compile("(?i)\\b[a-z]{3,}(?:\\s+[a-z]{2,}){9,}\\b");
 
     private final int maxAlertsToAggregate;
     private final IpQueryService ipQueryService;
@@ -95,7 +101,10 @@ public class AlertAggregator {
                         }
                         
                         if (event.has("payload_preview")) {
-                            aggregated.addPayload(event.get("payload_preview").asText());
+                            String sanitizedPayload = sanitizePayloadPreview(event.get("payload_preview").asText());
+                            if (sanitizedPayload != null && !sanitizedPayload.isEmpty()) {
+                                aggregated.addPayload(sanitizedPayload);
+                            }
                         }
                         
                         if (event.has("ts")) {
@@ -264,6 +273,32 @@ public class AlertAggregator {
                 limit, aggregatedList.size(), totalSessions, totalEvents);
 
         return result;
+    }
+
+    private String sanitizePayloadPreview(String payload) {
+        if (payload == null) {
+            return null;
+        }
+        String compact = payload.trim().replaceAll("\\s+", " ");
+        if (compact.isEmpty()) {
+            return null;
+        }
+
+        if (compact.length() > MAX_PAYLOAD_PREVIEW_LENGTH) {
+            compact = compact.substring(0, MAX_PAYLOAD_PREVIEW_LENGTH) + "...";
+        }
+
+        boolean hasInstructionKeyword = PROMPT_INJECTION_KEYWORDS.matcher(compact).find();
+        boolean hasLongSentence = LONG_ENGLISH_SENTENCE.matcher(compact).find();
+
+        String neutralized = PROMPT_INJECTION_KEYWORDS.matcher(compact).replaceAll("[redacted_kw]");
+        if (hasInstructionKeyword && hasLongSentence) {
+            return "[sanitized_prompt_like_payload]";
+        }
+        if (hasLongSentence) {
+            neutralized = LONG_ENGLISH_SENTENCE.matcher(neutralized).replaceAll("[compact_english_text]");
+        }
+        return neutralized;
     }
 
     private int readInt(JsonNode node, int defaultValue) {

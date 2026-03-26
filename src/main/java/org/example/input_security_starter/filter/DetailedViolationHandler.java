@@ -2,6 +2,7 @@ package org.example.input_security_starter.filter;
 
 import org.example.input_security_starter.engine.OptimizedRuleEngine;
 import org.example.input_security_starter.engine.OptimizedRuleEngine.MatchResult;
+import org.example.input_security_starter.engine.InputNormalizer;
 import org.example.input_security_starter.event.EventRecorder;
 import org.example.input_security_starter.event.SecurityEvent;
 import org.slf4j.Logger;
@@ -56,23 +57,105 @@ public class DetailedViolationHandler {
         String method = request.getMethod();
         String userAgent = request.getHeader("User-Agent");
 
-        MatchResult matchResult = ruleEngine.matchDetailed(detectedInput);
+        String inputForMatch = originalInput != null ? originalInput : detectedInput;
+        MatchResult matchResult = ruleEngine.matchDetailed(inputForMatch);
+        String normalizedInput = detectedInput;
+        if (matchResult != null && matchResult.isNormalizedMatch() && originalInput != null) {
+            normalizedInput = InputNormalizer.normalize(originalInput);
+        }
+        boolean normalizedHit = matchResult != null && matchResult.isNormalizedMatch();
+        double eventConfidence = computeEventConfidence(ruleName, source, matchResult, normalizedHit);
         
         SecurityEvent.Builder eventBuilder = new SecurityEvent.Builder(ruleName, 
                 detectedInput, url, method)
                 .ipAddress(clientIp)
                 .originalInput(originalInput)
-                .normalizedInput(detectedInput)
+                .normalizedInput(normalizedInput)
                 .inputSource(source)
                 .parameterName(parameterName)
                 .sessionId(request.getRequestedSessionId())
-                .userAgent(userAgent);
+                .userAgent(userAgent)
+                .eventConfidence(eventConfidence);
         
         if (matchResult != null) {
             eventBuilder.ruleLevel(matchResult.getLevel());
         }
         
         SecurityEvent event = eventBuilder.build();
+        log.debug("Security event confidence computed: rule={}, source={}, normalizedHit={}, confidence={}",
+            ruleName, source, normalizedHit, event.getEventConfidence());
         eventRecorder.record(event);
+    }
+
+    private double computeEventConfidence(String ruleName, String source, MatchResult matchResult, boolean normalizedHit) {
+        double ruleFactor = resolveRuleFactor(matchResult);
+        double sourceFactor = resolveSourceFactor(source);
+        double normalizationFactor = normalizedHit ? 0.88d : 0.98d;
+        double feedbackFactor = resolveHistoricalFeedbackFactor(ruleName, source);
+        return clamp(ruleFactor * sourceFactor * normalizationFactor * feedbackFactor, 0.05d, 0.99d);
+    }
+
+    private double resolveRuleFactor(MatchResult matchResult) {
+        if (matchResult == null || matchResult.getLevel() == null) {
+            return 0.78d;
+        }
+        String level = matchResult.getLevel().trim().toLowerCase();
+        if ("high".equals(level)) {
+            return 0.95d;
+        }
+        if ("medium".equals(level)) {
+            return 0.84d;
+        }
+        if ("low".equals(level)) {
+            return 0.72d;
+        }
+        return 0.78d;
+    }
+
+    private double resolveSourceFactor(String source) {
+        if (source == null) {
+            return 0.75d;
+        }
+        String normalized = source.trim().toLowerCase();
+        if ("parameter".equals(normalized)) {
+            return 0.94d;
+        }
+        if ("body".equals(normalized)) {
+            return 0.90d;
+        }
+        if ("header".equals(normalized)) {
+            return 0.78d;
+        }
+        if ("cookie".equals(normalized)) {
+            return 0.74d;
+        }
+        return 0.75d;
+    }
+
+    private double resolveHistoricalFeedbackFactor(String ruleName, String source) {
+        if (ruleName == null) {
+            return 1.0d;
+        }
+        String normalizedRule = ruleName.trim().toLowerCase();
+        if ("ssrf-attack".equals(normalizedRule) || "ldap-injection".equals(normalizedRule)) {
+            return "header".equalsIgnoreCase(source) ? 0.85d : 0.90d;
+        }
+        if ("path-traversal".equals(normalizedRule)) {
+            return 0.92d;
+        }
+        return 1.0d;
+    }
+
+    private double clamp(double value, double min, double max) {
+        if (Double.isNaN(value) || Double.isInfinite(value)) {
+            return min;
+        }
+        if (value < min) {
+            return min;
+        }
+        if (value > max) {
+            return max;
+        }
+        return value;
     }
 }

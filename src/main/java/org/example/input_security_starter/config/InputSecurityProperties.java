@@ -364,6 +364,7 @@ public class InputSecurityProperties {
         private int maxEventsPerSession = 20;
         private int minPhasesForChain = 2;
         private int riskScoreThreshold = 80;
+        private double eventConfidenceThreshold = 0.6d;
         private String alertLogPath = "attack-chain-alerts.log";
         private boolean attackerIndexEnabled = true;
         private int maxProfiles = 10000;
@@ -386,6 +387,10 @@ public class InputSecurityProperties {
         public void setMinPhasesForChain(int minPhasesForChain) { this.minPhasesForChain = minPhasesForChain; }
         public int getRiskScoreThreshold() { return riskScoreThreshold; }
         public void setRiskScoreThreshold(int riskScoreThreshold) { this.riskScoreThreshold = riskScoreThreshold; }
+        public double getEventConfidenceThreshold() { return eventConfidenceThreshold; }
+        public void setEventConfidenceThreshold(double eventConfidenceThreshold) {
+            this.eventConfidenceThreshold = Math.max(0.0d, Math.min(1.0d, eventConfidenceThreshold));
+        }
         public String getAlertLogPath() { return alertLogPath; }
         public void setAlertLogPath(String alertLogPath) { this.alertLogPath = alertLogPath; }
         public boolean isAttackerIndexEnabled() { return attackerIndexEnabled; }

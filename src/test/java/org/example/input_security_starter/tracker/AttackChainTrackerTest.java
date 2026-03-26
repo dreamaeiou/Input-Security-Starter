@@ -104,7 +104,59 @@ class AttackChainTrackerTest {
         assertEquals(1, AttackPhase.DELIVERY.distance(AttackPhase.RECONNAISSANCE));
     }
 
+    @Test
+    @DisplayName("Low-confidence event should not advance phase progression")
+    void testLowConfidenceEventDoesNotAdvanceChain() {
+        String clientIp = "198.51.100.10";
+        String sid = "sess-low-confidence";
+        String expectedSessionId = clientIp + ":" + sid;
+
+        tracker.onSecurityEvent(createSecurityEvent("ssrf-attack", clientIp, sid, 0.45d));
+        tracker.onSecurityEvent(createSecurityEvent("sql-injection", clientIp, sid, 0.95d));
+
+        AttackSession session = tracker.getSession(expectedSessionId);
+        assertNotNull(session);
+        assertFalse(session.isChainDetected(), "low-confidence reconnaissance should not advance chain");
+        assertEquals(1, session.getTriggeredPhases().size(), "only delivery phase should be counted");
+        assertEquals(2, session.getEventCount(), "all events should still be recorded");
+        assertTrue(alertHandler.getAlerts().isEmpty(), "no alert expected");
+    }
+
+    @Test
+    @DisplayName("Chain confidence should reduce final risk score")
+    void testChainConfidenceReducesRiskScore() {
+        AttackChainTracker localTracker = new AttackChainTracker(100, 5, 20, 3);
+        TestAlertHandler localAlertHandler = new TestAlertHandler();
+        localTracker.setAlertHandler(localAlertHandler);
+
+        String highIp = "203.0.113.50";
+        String lowIp = "203.0.113.60";
+        String sid = "sess-risk";
+
+        localTracker.onSecurityEvent(createSecurityEvent("ssrf-attack", highIp, sid, 0.95d));
+        localTracker.onSecurityEvent(createSecurityEvent("sql-injection", highIp, sid, 0.95d));
+        localTracker.onSecurityEvent(createSecurityEvent("command-injection", highIp, sid, 0.95d));
+
+        localTracker.onSecurityEvent(createSecurityEvent("ssrf-attack", lowIp, sid, 0.95d));
+        localTracker.onSecurityEvent(createSecurityEvent("sql-injection", lowIp, sid, 0.95d));
+        localTracker.onSecurityEvent(createSecurityEvent("command-injection", lowIp, sid, 0.60d));
+
+        AttackChainAlert highAlert = findAlertByIp(localAlertHandler, highIp);
+        AttackChainAlert lowAlert = findAlertByIp(localAlertHandler, lowIp);
+
+        assertNotNull(highAlert);
+        assertNotNull(lowAlert);
+        assertTrue(highAlert.getRiskScore() >= lowAlert.getRiskScore(),
+            "lower chain confidence should not produce a higher final risk score");
+        assertTrue(highAlert.getChainConfidence() > lowAlert.getChainConfidence(),
+            "chain confidence should be reflected in alert payload");
+    }
+
     private SecurityEvent createSecurityEvent(String ruleName, String clientIp, String sessionId) {
+        return createSecurityEvent(ruleName, clientIp, sessionId, 1.0d);
+    }
+
+    private SecurityEvent createSecurityEvent(String ruleName, String clientIp, String sessionId, double confidence) {
         return new SecurityEvent.Builder(ruleName, "test-payload", "/api/test", "GET")
             .ipAddress(clientIp)
             .sessionId(sessionId)
@@ -113,7 +165,17 @@ class AttackChainTrackerTest {
             .inputSource("parameter")
             .parameterName("q")
             .ruleLevel("high")
+            .eventConfidence(confidence)
             .build();
+    }
+
+    private AttackChainAlert findAlertByIp(TestAlertHandler handler, String ip) {
+        for (AttackChainAlert alert : handler.getAlerts()) {
+            if (ip.equals(alert.getClientIp())) {
+                return alert;
+            }
+        }
+        return null;
     }
 
     private static class TestAlertHandler implements AttackChainTracker.AlertHandler {

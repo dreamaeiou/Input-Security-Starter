@@ -43,6 +43,7 @@ public class AttackChainAlert {
     /** 攻击持续时间（毫秒） */
     private long duration;
     private int riskScore;
+    private double chainConfidence;
     private String threatLevel;
     private Map<String, Object> attackerProfile;
     private List<Map<String, Object>> relatedAttackers;
@@ -90,6 +91,9 @@ public class AttackChainAlert {
         
         result.put("duration_ms", duration);
         result.put("risk_score", riskScore);
+        if (chainConfidence > 0.0d) {
+            result.put("chain_confidence", Math.round(chainConfidence * 1000.0d) / 1000.0d);
+        }
         if (threatLevel != null && !threatLevel.isEmpty()) {
             result.put("threat_level", threatLevel);
         }
@@ -158,6 +162,9 @@ public class AttackChainAlert {
 
     public int getRiskScore() { return riskScore; }
     public void setRiskScore(int riskScore) { this.riskScore = riskScore; }
+
+    public double getChainConfidence() { return chainConfidence; }
+    public void setChainConfidence(double chainConfidence) { this.chainConfidence = chainConfidence; }
 
     public String getThreatLevel() { return threatLevel; }
     public void setThreatLevel(String threatLevel) { this.threatLevel = threatLevel; }

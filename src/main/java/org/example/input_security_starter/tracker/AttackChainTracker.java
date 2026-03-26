@@ -24,6 +24,7 @@ public class AttackChainTracker {
 
     private static final int DEFAULT_RISK_THRESHOLD = 80;
     private static final int DEFAULT_MAX_RELATED_ATTACKERS = 10;
+    private static final double DEFAULT_EVENT_CONFIDENCE_THRESHOLD = 0.60d;
 
     /** Rule name -> kill-chain phase */
     private static final Map<String, AttackPhase> RULE_PHASE_MAP;
@@ -56,6 +57,8 @@ public class AttackChainTracker {
     private final int maxEventsPerSession;
     private final int minPhasesForChain;
     private final int riskScoreThreshold;
+
+    private volatile double eventConfidenceThreshold = DEFAULT_EVENT_CONFIDENCE_THRESHOLD;
     private int maxRelatedAttackers = DEFAULT_MAX_RELATED_ATTACKERS;
 
     private AlertHandler alertHandler;
@@ -97,8 +100,8 @@ public class AttackChainTracker {
         this.scheduler.scheduleAtFixedRate(this::cleanExpiredSessions, 1, 1, TimeUnit.MINUTES);
 
         log.info(
-            "AttackChainTracker initialized: maxSessions={}, timeout={}min, riskThreshold={}",
-            maxSessions, sessionTimeoutMinutes, this.riskScoreThreshold
+            "AttackChainTracker initialized: maxSessions={}, timeout={}min, riskThreshold={}, eventConfidenceThreshold={}",
+            maxSessions, sessionTimeoutMinutes, this.riskScoreThreshold, this.eventConfidenceThreshold
         );
     }
 
@@ -123,14 +126,22 @@ public class AttackChainTracker {
         }
         AttackSession session = getOrCreateSession(sessionId, clientIp);
 
-        session.recordEvent(event, phase);
-        detectAttackChain(session, phase, ruleName);
+        double confidence = normalizeEventConfidence(event.getEventConfidence());
+        boolean contributesToChain = confidence >= eventConfidenceThreshold;
 
-        int riskScore = calculateRiskScore(session);
-        String threatLevel = resolveThreatLevel(riskScore);
-        recordAttackerProfile(event, phase, riskScore, threatLevel);
+        session.recordEvent(event, phase, contributesToChain);
+        if (contributesToChain) {
+            detectAttackChain(session, phase, ruleName);
+        } else {
+            log.debug("Low-confidence event excluded from phase progression: sessionId={}, rule={}, confidence={}",
+                sessionId, ruleName, confidence);
+        }
 
-        checkAndAlert(session, event, riskScore, threatLevel);
+        RiskComputation risk = calculateRiskScore(session);
+        String threatLevel = resolveThreatLevel(risk.finalScore);
+        recordAttackerProfile(event, phase, risk.finalScore, threatLevel);
+
+        checkAndAlert(session, event, risk, threatLevel);
     }
 
     private void recordAttackerProfile(SecurityEvent event, AttackPhase phase, int riskScore, String threatLevel) {
@@ -203,7 +214,7 @@ public class AttackChainTracker {
         for (int i = events.size() - 1; i >= 0; i--) {
             SecurityEvent event = events.get(i);
             AttackPhase eventPhase = RULE_PHASE_MAP.get(event.getRuleName());
-            if (eventPhase == phase) {
+            if (eventPhase == phase && isEventEligibleForChain(event)) {
                 return event.getRuleName();
             }
         }
@@ -215,49 +226,91 @@ public class AttackChainTracker {
         for (int i = events.size() - 1; i >= 0; i--) {
             SecurityEvent event = events.get(i);
             AttackPhase eventPhase = RULE_PHASE_MAP.get(event.getRuleName());
-            if (eventPhase == phase && event.getTimestamp() != null) {
+            if (eventPhase == phase && event.getTimestamp() != null && isEventEligibleForChain(event)) {
                 return event.getTimestamp().getTime();
             }
         }
         return 0;
     }
 
-    private int calculateRiskScore(AttackSession session) {
-        int score = 0;
+    private RiskComputation calculateRiskScore(AttackSession session) {
+        int rawScore = 0;
 
         AttackPhase current = session.getCurrentPhase();
         if (current != null) {
-            score = Math.max(score, current.getBaseScore());
+            rawScore = Math.max(rawScore, current.getBaseScore());
         }
 
         int phaseCount = session.getTriggeredPhases().size();
-        score += Math.min(phaseCount * 6, 18);
+        rawScore += Math.min(phaseCount * 6, 18);
 
         int chainCount = session.getChains().size();
-        score += Math.min(chainCount * 8, 20);
+        rawScore += Math.min(chainCount * 8, 20);
 
-        int eventCount = session.getEventCount();
+        int eventCount = session.getChainEventCount();
         if (eventCount > 15) {
-            score += 15;
+            rawScore += 15;
         } else if (eventCount > 8) {
-            score += 10;
+            rawScore += 10;
         } else if (eventCount > 4) {
-            score += 6;
+            rawScore += 6;
         } else if (eventCount > 1) {
-            score += 3;
+            rawScore += 3;
         }
 
         EnumSet<AttackPhase> phases = session.getTriggeredPhases();
         if (phases.contains(AttackPhase.EXPLOITATION)) {
-            score += 10;
+            rawScore += 10;
         }
         if (phases.contains(AttackPhase.INSTALLATION)
             || phases.contains(AttackPhase.COMMAND_CONTROL)
             || phases.contains(AttackPhase.ACTIONS)) {
-            score += 12;
+            rawScore += 12;
         }
 
-        return Math.max(0, Math.min(100, score));
+        rawScore = clampInt(rawScore, 0, 100);
+
+        double chainConfidence = calculateChainConfidence(session);
+        int finalScore = clampInt((int) Math.round(rawScore * chainConfidence), 0, 100);
+        return new RiskComputation(rawScore, chainConfidence, finalScore);
+    }
+
+    private double calculateChainConfidence(AttackSession session) {
+        List<SecurityEvent> events = session.getEvents();
+        double sumLog = 0.0d;
+        int count = 0;
+        for (SecurityEvent event : events) {
+            AttackPhase phase = RULE_PHASE_MAP.get(event.getRuleName());
+            if (phase == null) {
+                continue;
+            }
+            double confidence = normalizeEventConfidence(event.getEventConfidence());
+            if (confidence >= eventConfidenceThreshold) {
+                sumLog += Math.log(Math.max(0.01d, confidence));
+                count++;
+            }
+        }
+
+        if (count <= 0) {
+            return 1.0d;
+        }
+
+        double geometricMean = Math.exp(sumLog / count);
+        return clampDouble(geometricMean, 0.05d, 1.0d);
+    }
+
+    private boolean isEventEligibleForChain(SecurityEvent event) {
+        if (event == null) {
+            return false;
+        }
+        return normalizeEventConfidence(event.getEventConfidence()) >= eventConfidenceThreshold;
+    }
+
+    private double normalizeEventConfidence(double confidence) {
+        if (Double.isNaN(confidence) || Double.isInfinite(confidence)) {
+            return 1.0d;
+        }
+        return clampDouble(confidence, 0.0d, 1.0d);
     }
 
     private String resolveThreatLevel(int riskScore) {
@@ -273,19 +326,19 @@ public class AttackChainTracker {
         return "low";
     }
 
-    private void checkAndAlert(AttackSession session, SecurityEvent event, int riskScore, String threatLevel) {
+    private void checkAndAlert(AttackSession session, SecurityEvent event, RiskComputation risk, String threatLevel) {
         if (alertHandler == null || session.isAlertSent()) {
             return;
         }
 
         boolean chainDetected = session.isChainDetected();
-        boolean riskExceeded = riskScore >= riskScoreThreshold;
+        boolean riskExceeded = risk.finalScore >= riskScoreThreshold;
         if (!chainDetected && !riskExceeded) {
             return;
         }
 
         String reason = chainDetected ? "attack_chain_detected" : "risk_threshold_exceeded";
-        AttackChainAlert alert = buildAlert(session, event, reason, riskScore, threatLevel);
+        AttackChainAlert alert = buildAlert(session, event, reason, risk, threatLevel);
         alertHandler.onAlert(alert);
         session.markAlertSent();
     }
@@ -294,7 +347,7 @@ public class AttackChainTracker {
         AttackSession session,
         SecurityEvent event,
         String reason,
-        int riskScore,
+        RiskComputation risk,
         String threatLevel
     ) {
         AttackChainAlert alert = new AttackChainAlert();
@@ -307,7 +360,8 @@ public class AttackChainTracker {
         alert.setEventCount(session.getEventCount());
         alert.setDuration(session.getDuration());
         alert.setEvents(buildEventSummaries(session));
-        alert.setRiskScore(riskScore);
+        alert.setRiskScore(risk.finalScore);
+        alert.setChainConfidence(risk.chainConfidence);
         alert.setThreatLevel(threatLevel);
 
         AttackerIndex index = this.attackerIndex;
@@ -339,6 +393,7 @@ public class AttackChainTracker {
             summary.put("rule", evt.getRuleName());
             summary.put("url", evt.getUrl());
             summary.put("ip", evt.getIpAddress());
+            summary.put("event_confidence", roundTo3(normalizeEventConfidence(evt.getEventConfidence())));
 
             String payload = evt.getOriginalInput();
             if (payload != null && payload.length() > 100) {
@@ -442,6 +497,14 @@ public class AttackChainTracker {
         return riskScoreThreshold;
     }
 
+    public double getEventConfidenceThreshold() {
+        return eventConfidenceThreshold;
+    }
+
+    public void setEventConfidenceThreshold(double eventConfidenceThreshold) {
+        this.eventConfidenceThreshold = clampDouble(eventConfidenceThreshold, 0.0d, 1.0d);
+    }
+
     public void shutdown() {
         scheduler.shutdown();
         try {
@@ -452,8 +515,47 @@ public class AttackChainTracker {
         log.info("AttackChainTracker shutdown");
     }
 
+    private int clampInt(int value, int min, int max) {
+        if (value < min) {
+            return min;
+        }
+        if (value > max) {
+            return max;
+        }
+        return value;
+    }
+
+    private double clampDouble(double value, double min, double max) {
+        if (Double.isNaN(value) || Double.isInfinite(value)) {
+            return min;
+        }
+        if (value < min) {
+            return min;
+        }
+        if (value > max) {
+            return max;
+        }
+        return value;
+    }
+
+    private double roundTo3(double value) {
+        return Math.round(value * 1000.0d) / 1000.0d;
+    }
+
     @FunctionalInterface
     public interface AlertHandler {
         void onAlert(AttackChainAlert alert);
+    }
+
+    private static class RiskComputation {
+        private final int rawScore;
+        private final double chainConfidence;
+        private final int finalScore;
+
+        private RiskComputation(int rawScore, double chainConfidence, int finalScore) {
+            this.rawScore = rawScore;
+            this.chainConfidence = chainConfidence;
+            this.finalScore = finalScore;
+        }
     }
 }

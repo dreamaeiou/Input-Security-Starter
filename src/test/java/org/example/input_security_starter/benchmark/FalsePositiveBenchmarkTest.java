@@ -30,6 +30,9 @@ class FalsePositiveBenchmarkTest {
     private static final double MAX_FPR = Double.parseDouble(System.getProperty("fpr.max", "0.15"));
     private static final double MAX_EDGE_FPR = Double.parseDouble(System.getProperty("edge.fpr.max", "0.35"));
     private static final double MIN_ATTACK_DETECTION_RATE = Double.parseDouble(System.getProperty("attack.detect.min", "0.90"));
+    private static final int MIN_NORMAL_SAMPLES = Integer.parseInt(System.getProperty("normal.samples.min", "500"));
+    private static final int MIN_EDGE_SAMPLES = Integer.parseInt(System.getProperty("edge.samples.min", "100"));
+    private static final int MIN_ATTACK_SAMPLES = Integer.parseInt(System.getProperty("attack.samples.min", "200"));
 
     private OptimizedRuleEngine ruleEngine;
 
@@ -46,6 +49,13 @@ class FalsePositiveBenchmarkTest {
         List<Sample> normalSamples = loadSamples("benchmark/normal-inputs.txt");
         List<Sample> edgeSamples = loadSamples("benchmark/edge-normal-inputs.txt");
         List<Sample> attackSamples = loadSamples("benchmark/attack-inputs.txt");
+
+        assertTrue(normalSamples.size() >= MIN_NORMAL_SAMPLES,
+                String.format("Normal sample size too small: %d < %d", normalSamples.size(), MIN_NORMAL_SAMPLES));
+        assertTrue(edgeSamples.size() >= MIN_EDGE_SAMPLES,
+                String.format("Edge sample size too small: %d < %d", edgeSamples.size(), MIN_EDGE_SAMPLES));
+        assertTrue(attackSamples.size() >= MIN_ATTACK_SAMPLES,
+                String.format("Attack sample size too small: %d < %d", attackSamples.size(), MIN_ATTACK_SAMPLES));
 
         BenchmarkResult normalResult = runEvaluation(normalSamples, false);
         BenchmarkResult edgeResult = runEvaluation(edgeSamples, false);
@@ -93,6 +103,8 @@ class FalsePositiveBenchmarkTest {
                 edgeResult.total, edgeResult.hitCount, edgeResult.rate() * 100);
         System.out.printf("Attack set: total=%d, detected=%d, detectionRate=%.2f%%%n",
                 attackResult.total, attackResult.hitCount, attackResult.rate() * 100);
+        System.out.printf("Normal-set 95%% one-sided upper bound (when FP=0): %.2f%%%n",
+                zeroFpUpperBound95(normalResult.total) * 100);
 
         Map<String, Integer> merged = new LinkedHashMap<>();
         mergeCounts(merged, normalResult.hitByRule);
@@ -131,6 +143,13 @@ class FalsePositiveBenchmarkTest {
         }
     }
 
+    private double zeroFpUpperBound95(int total) {
+        if (total <= 0) {
+            return 0.0;
+        }
+        return 1.0 - Math.pow(0.05, 1.0 / total);
+    }
+
     private void mergeCounts(Map<String, Integer> merged, Map<String, Integer> counts) {
         for (Map.Entry<String, Integer> entry : counts.entrySet()) {
             merged.put(entry.getKey(), merged.getOrDefault(entry.getKey(), 0) + entry.getValue());
@@ -147,7 +166,7 @@ class FalsePositiveBenchmarkTest {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
-                String trimmed = line.trim();
+                String trimmed = stripBom(line).trim();
                 if (trimmed.isEmpty() || trimmed.startsWith("#")) {
                     continue;
                 }
@@ -157,10 +176,23 @@ class FalsePositiveBenchmarkTest {
                     continue;
                 }
 
-                samples.add(new Sample(parts[0].trim(), parts[1].trim()));
+                String source = parts[0].trim();
+                String value = parts[1].trim();
+                if ("source".equalsIgnoreCase(source) && "value".equalsIgnoreCase(value)) {
+                    continue;
+                }
+
+                samples.add(new Sample(source, value));
             }
         }
         return Collections.unmodifiableList(samples);
+    }
+
+    private String stripBom(String line) {
+        if (line != null && !line.isEmpty() && line.charAt(0) == '\uFEFF') {
+            return line.substring(1);
+        }
+        return line;
     }
 
     private static class Sample {
