@@ -454,7 +454,8 @@ public class InputSecurityProperties {
                 "|<\\s*details[^>]*ontoggle" +
                 "|<\\s*marquee[^>]*onstart" +
                 "|<\\s*(video|audio)[^>]*onerror" +
-                "|<\\s*source[^>]*onerror",
+                "|<\\s*source[^>]*onerror" +
+                "|['\"]\\s*-\\s*alert\\s*\\(",
                 "high",
                 true));
 
@@ -463,16 +464,13 @@ public class InputSecurityProperties {
                 "code-execution",
                 "(?i)" +
                 "\\b(eval|setTimeout|setInterval|Function|constructor)\\s*\\(" +
-                "|\\b(system|exec|shell_exec|passthru|popen|proc_open|pcntl_exec)\\s*\\(" +
+                "|(?<!\\.)\\b(system|exec|shell_exec|passthru|popen|proc_open|pcntl_exec)\\s*\\(" +
                 "|\\b(file_get_contents|file_put_contents|fopen|fwrite|fread|readfile|include|require|include_once|require_once)\\s*\\(" +
                 "|\\b(unserialize|serialize)\\s*\\(" +
                 "|\\bClass\\.forName\\s*\\(" +
-                "|\\bgetMethod\\s*\\(" +
-                "|\\binvoke\\s*\\(" +
                 // ReDoS 修复: [^}]* 是安全的（否定字符类），但为了保险起见，建议确保输入长度校验
-                "|\\$\\{[^}]*(?:runtime|process|getRuntime|exec|new\\s+java|Class\\.forName)\\s*[^}]*\\}" +
-                "|#\\{[^}]*(?:runtime|process|getRuntime|exec)[^}]*\\}" +
-                "|\\?new\\s*\\(",
+                "|\\$\\{\\s*(?:runtime|process|getRuntime)\\s*\\.\\s*exec\\s*\\([^}]*\\}" +
+                "|\\$\\{[^}]*(?:new\\s+java)[^}]*\\}",
                 "high",
                 true));
 
@@ -500,6 +498,8 @@ public class InputSecurityProperties {
                 "|\\b(?:sleep|benchmark|waitfor\\s+delay|pg_sleep)\\s*\\(" +
                 "|\\bor\\s+['\"]?\\d+['\"]?\\s*=\\s*['\"]?\\d+" +
                 "|\\band\\s+['\"]?\\d+['\"]?\\s*=\\s*['\"]?\\d+" +
+                "|['\"]\\s*or\\s*['\"]{2}\\s*=\\s*['\"]{1,2}" +
+                "|\\border\\s+by\\s+\\d+\\b" +
                 "|\\b(?:version|database|user|schema)\\s*\\(" +
                 "|\\b0x[0-9a-fA-F]+\\b" +
                 "|\\bchar\\s*\\([^)]*\\)" +
@@ -523,7 +523,7 @@ public class InputSecurityProperties {
                 "|`[^`]+`" +
                 "|\\$\\([^)]+\\)" +
                 // 3. 极其危险的系统程序直接调用
-                "|\\b(?:cmd|powershell|pwsh|wsl|/bin/sh|/bin/bash|/bin/zsh)\\b" +
+                "|\\b(?:cmd(?:\\.exe)?\\s*(?:/c|/k)|powershell|pwsh|wsl|/bin/sh|/bin/bash|/bin/zsh)\\b" +
                 // 增加：Windows 常见 PoC 程序 (calc, notepad, mspaint)
                 // 注意：这里使用了 \b 边界匹配，防止匹配到 'calculation'
                 "|\\b(?:calc|notepad|mspaint|winver)(?:\\.exe)?\\b" +
@@ -580,6 +580,7 @@ public class InputSecurityProperties {
                 "|(?:%2e%2e[%/])" +
                 "|(?:%252e%252e)" +
                 "|(?:%c0%ae)" +
+                "|(?:%c0%af)" +
                 "|(?:%uff0e)" +
                 "|(?:\\.\\.%252f)" +
                 "|(?:\\.\\.%255c)" +
@@ -589,7 +590,7 @@ public class InputSecurityProperties {
                 "|(?:\\.\\.[\\\\/]){3,}" +
                 "|(?:\\.\\.[\\\\/]\\x00)" +
                 "|(?:\\\\\\.\\\\[a-zA-Z]+)" +
-                "|(?:/dev/(?:null|zero|random|urandom|tcp|udp))",
+                "|(?:^/(?:etc/(?:passwd|shadow)|proc/self/environ|windows/win\\.ini)(?:$|[/?#]))",
                 "high",
                 true));
 
@@ -603,6 +604,7 @@ public class InputSecurityProperties {
                 "|\\)\\(" +
                 "|\\)\\|\\(" +
                 "|\\)&\\(" +
+                "|\\*\\)\\(cn=\\*" +
                 "|\\\\[0-9a-fA-F]{2}" +
                 "|\\(\\w+=\\x00" +
                 "|\\b(?:memberOf|userAccountControl|objectClass)\\s*=",
@@ -635,7 +637,9 @@ public class InputSecurityProperties {
                 "|\\{%[^%]*(?:import|include|extends|from)[^%]*%\\}" +
                 "|\\{php\\}" +
                 "|\\{[^}]*(?:system|exec|passthru)[^}]*\\}" +
-                "|\\$\\{[^}]*(?:self|import|exec|eval)[^}]*\\}" +
+                "|\\$\\{[^}]*(?:self|import)[^}]*\\}" +
+                "|\\$\\{[^}]*(?:getClass\\s*\\(|forName\\s*\\(|getMethod\\s*\\(|invoke\\s*\\()[^}]*\\}" +
+                "|<\\#assign[^>]{0,300}freemarker\\.template\\.utility\\.Execute[^>]{0,300}>" +
                 "|!\\{[^}]*(?:eval|Function)[^}]*\\}" +
                 "|\\$\\{7\\*7\\}" +
                 "|\\{\\{7\\*7\\}\\}" +
@@ -650,6 +654,7 @@ public class InputSecurityProperties {
                 "rO0AB" +
                 "|aced0005" +
                 "|O:\\d+:\"[^\"]+\":" +
+                "|O:\\d+:\"[^\"]+\":\\d+:\\{" +
                 "|a:\\d+:\\{" +
                 "|c(?:pickle|cPickle)" +
                 "|\\(lp\\d+" +

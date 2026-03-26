@@ -36,12 +36,12 @@ public class AttackChainLogGeneratorTest {
     };
 
     private static final String[][] ATTACK_RULES_BY_PHASE = {
-        {"port-scan", "directory-traversal-attempt", "info-disclosure"},
-        {"xss-attack", "sql-injection", "ldap-injection", "ssrf-attack"},
-        {"path-traversal", "xxe-injection", "template-injection", "deserialization-attack"},
-        {"command-injection", "code-execution", "file-upload"},
-        {"c2-communication", "data-exfiltration"},
-        {"ransomware-activity", "privilege-escalation"}
+        {"ssrf-attack", "path-traversal", "ldap-injection"},
+        {"xss-attack", "sql-injection", "xxe-injection", "nosql-injection", "template-injection"},
+        {"command-injection", "code-execution", "deserialization-attack"},
+        {"installation-attack"},
+        {"c2-communication"},
+        {"actions-on-objectives"}
     };
 
     private static final String[] URLS = {
@@ -80,8 +80,10 @@ public class AttackChainLogGeneratorTest {
 
     private static final String[] THREAT_LEVELS = {"low", "medium", "high", "critical"};
     private static final String[] ATTACK_TYPE_NAMES = {
-        "sql-injection", "xss-attack", "command-injection", "ssrf-attack",
-        "path-traversal", "xxe-injection", "template-injection", "deserialization-attack"
+        "xss-attack", "sql-injection", "code-execution", "command-injection",
+        "ssrf-attack", "path-traversal", "ldap-injection", "xxe-injection",
+        "template-injection", "deserialization-attack", "nosql-injection",
+        "installation-attack", "c2-communication", "actions-on-objectives"
     };
 
     @Test

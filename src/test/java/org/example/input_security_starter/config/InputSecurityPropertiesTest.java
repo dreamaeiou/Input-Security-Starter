@@ -42,7 +42,7 @@ class InputSecurityPropertiesTest {
     @DisplayName("Should provide default rules when empty")
     void testDefaultRules() {
         List<org.example.input_security_starter.model.SecurityRule> rules = properties.getRules();
-        
+
         assertFalse(rules.isEmpty());
         assertTrue(rules.stream().anyMatch(r -> r.getName().equals("xss-attack")));
         assertTrue(rules.stream().anyMatch(r -> r.getName().equals("sql-injection")));
@@ -52,6 +52,12 @@ class InputSecurityPropertiesTest {
         assertTrue(rules.stream().anyMatch(r -> r.getName().equals("path-traversal")));
         assertTrue(rules.stream().anyMatch(r -> r.getName().equals("ldap-injection")));
         assertTrue(rules.stream().anyMatch(r -> r.getName().equals("xxe-injection")));
+        assertTrue(rules.stream().anyMatch(r -> r.getName().equals("template-injection")));
+        assertTrue(rules.stream().anyMatch(r -> r.getName().equals("deserialization-attack")));
+        assertTrue(rules.stream().anyMatch(r -> r.getName().equals("nosql-injection")));
+        assertTrue(rules.stream().anyMatch(r -> r.getName().equals("installation-attack")));
+        assertTrue(rules.stream().anyMatch(r -> r.getName().equals("c2-communication")));
+        assertTrue(rules.stream().anyMatch(r -> r.getName().equals("actions-on-objectives")));
     }
 
     @Test

