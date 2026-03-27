@@ -26,12 +26,18 @@ public class WeComNotifier {
         }
 
         try {
-            String content = ReportMarkdownBuilder.buildStructuredMarkdown(report);
-            boolean success = weComClient.sendMarkdownMessage(content);
-            if (success) {
-                log.info("Analysis report notification sent to WeCom: {}", report.getReportId());
+            String content1 = ReportMarkdownBuilder.buildTacticalSummary(report);
+            boolean firstOk = weComClient.sendMarkdownMessage(content1);
+
+            String title2 = "\uD83D\uDCCB \u60C5\u62A5\u8BE6\u60C5 \u00B7 " + report.getReportId();
+            String content2 = "## " + title2 + "\n\n" + ReportMarkdownBuilder.buildIntelligenceJsonBlock(report);
+            boolean secondOk = weComClient.sendMarkdownMessage(content2);
+
+            if (firstOk && secondOk) {
+                log.info("Analysis report notifications sent to WeCom (2 messages): {}", report.getReportId());
             } else {
-                log.warn("Failed to send analysis report notification to WeCom: {}", report.getReportId());
+                log.warn("Failed to send one or more WeCom notifications: {}, firstOk={}, secondOk={}",
+                    report.getReportId(), firstOk, secondOk);
             }
         } catch (Exception e) {
             log.error("Error sending analysis report notification to WeCom: {}", e.getMessage(), e);

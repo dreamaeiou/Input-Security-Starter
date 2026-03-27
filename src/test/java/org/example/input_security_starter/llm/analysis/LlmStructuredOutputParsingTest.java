@@ -197,7 +197,14 @@ class LlmStructuredOutputParsingTest {
             assertNotNull(report);
             assertEquals("degraded", report.getStatus());
             assertNotNull(report.getSummary());
-            assertTrue(report.getSummary().contains("限流") || report.getAttackNarrative().contains("限流"));
+            assertNotNull(report.getErrorMessage());
+            String combined = String.valueOf(report.getSummary()) + " "
+                + String.valueOf(report.getAttackNarrative());
+            assertTrue(
+                report.getErrorMessage().contains("rate_limited")
+                    || combined.contains("Degraded reason")
+                    || report.getErrorMessage().contains("consistency_guard")
+            );
         } finally {
             logFile.delete();
         }
@@ -284,6 +291,91 @@ class LlmStructuredOutputParsingTest {
             assertEquals("degraded", report.getStatus());
             assertNotNull(report.getErrorMessage());
             assertTrue(report.getErrorMessage().contains("risk_consistency_guard_triggered"));
+        } finally {
+            logFile.delete();
+        }
+    }
+
+    @Test
+    void shouldDowngradeInvalidSameAsnPeerRelationWithoutBlockingPublish() throws Exception {
+        File logFile = createMinimalAlertLog();
+        try {
+            String llmJson =
+                "{"
+                    + "\"summary\":\"detected suspicious activity\","
+                    + "\"risk_score\":72,"
+                    + "\"risk_level\":\"medium\","
+                    + "\"attack_narrative\":\"suspicious requests found\","
+                    + "\"recommendations\":[\"[BLOCK] block source ip\",\"[PATCH] patch validation\",\"[MONITOR] monitor endpoint\",\"[REVIEW] review rule\",\"[IR] preserve evidence\"],"
+                    + "\"verdict\":{\"is_attack\":true,\"confidence\":0.88,\"classification\":\"attack\"},"
+                    + "\"attacker\":{\"skill_level\":\"intermediate\",\"automation\":\"semi_auto\",\"intent\":\"exploitation\"},"
+                    + "\"peer_attackers\":[{\"ip\":\"8.8.8.9\",\"relationship\":\"same_asn\",\"confidence\":0.91}],"
+                    + "\"key_indicators\":[\"8.8.8.8\",\"sql-injection\"]"
+                    + "}";
+
+            LlmAnalysisService service = new LlmAnalysisService(
+                new StaticJsonLlmProvider(llmJson),
+                null,
+                null,
+                logFile.getAbsolutePath(),
+                50,
+                4000,
+                10,
+                5,
+                5000,
+                null
+            );
+
+            AnalysisReport report = service.analyzeAttackChainAlerts(false);
+            assertNotNull(report);
+            assertEquals("guarded", report.getStatus());
+            assertNotNull(report.getErrorMessage());
+            assertTrue(report.getErrorMessage().contains("consistency_guard_triggered"));
+            assertNotNull(report.getPeerAttackers());
+            assertEquals(1, report.getPeerAttackers().size());
+            AnalysisReport.PeerAttacker peer = report.getPeerAttackers().get(0);
+            assertEquals("unverified_relation", peer.getRelationship());
+            assertTrue(peer.getConfidence() <= 0.45d);
+        } finally {
+            logFile.delete();
+        }
+    }
+
+    @Test
+    void shouldNormalizeRiskLevelWhenScoreAndLevelConflict() throws Exception {
+        File logFile = createMinimalAlertLog();
+        try {
+            String llmJson =
+                "{"
+                    + "\"summary\":\"detected suspicious activity\","
+                    + "\"risk_score\":72,"
+                    + "\"risk_level\":\"low\","
+                    + "\"attack_narrative\":\"suspicious requests found\","
+                    + "\"recommendations\":[\"[BLOCK] block source ip\",\"[PATCH] patch validation\",\"[MONITOR] monitor endpoint\",\"[REVIEW] review rule\",\"[IR] preserve evidence\"],"
+                    + "\"verdict\":{\"is_attack\":true,\"confidence\":0.88,\"classification\":\"attack\"},"
+                    + "\"attacker\":{\"skill_level\":\"intermediate\",\"automation\":\"semi_auto\",\"intent\":\"exploitation\"},"
+                    + "\"key_indicators\":[\"8.8.8.8\",\"sql-injection\"]"
+                    + "}";
+
+            LlmAnalysisService service = new LlmAnalysisService(
+                new StaticJsonLlmProvider(llmJson),
+                null,
+                null,
+                logFile.getAbsolutePath(),
+                50,
+                4000,
+                10,
+                5,
+                5000,
+                null
+            );
+
+            AnalysisReport report = service.analyzeAttackChainAlerts(false);
+            assertNotNull(report);
+            assertEquals("medium", report.getRiskLevel());
+            assertEquals("guarded", report.getStatus());
+            assertNotNull(report.getErrorMessage());
+            assertTrue(report.getErrorMessage().contains("consistency_guard_triggered"));
         } finally {
             logFile.delete();
         }

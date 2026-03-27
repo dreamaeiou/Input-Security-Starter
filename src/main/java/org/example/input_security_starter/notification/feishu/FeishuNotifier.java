@@ -26,13 +26,19 @@ public class FeishuNotifier {
         }
 
         try {
-            String title = ReportMarkdownBuilder.buildTitle(report);
-            String content = ReportMarkdownBuilder.buildStructuredMarkdown(report);
-            boolean success = feishuClient.sendCardMessage(title, content);
-            if (success) {
-                log.info("Analysis report notification sent: {}", report.getReportId());
+            String title1 = ReportMarkdownBuilder.buildTitle(report);
+            String content1 = ReportMarkdownBuilder.buildTacticalSummary(report);
+            boolean firstOk = feishuClient.sendCardMessage(title1, content1);
+
+            String title2 = "\uD83D\uDCCB \u60C5\u62A5\u8BE6\u60C5 \u00B7 " + report.getReportId();
+            String content2 = ReportMarkdownBuilder.buildIntelligenceJsonBlock(report);
+            boolean secondOk = feishuClient.sendCardMessage(title2, content2);
+
+            if (firstOk && secondOk) {
+                log.info("Analysis report notifications sent (2 messages): {}", report.getReportId());
             } else {
-                log.warn("Failed to send analysis report notification: {}", report.getReportId());
+                log.warn("Failed to send one or more Feishu notifications: {}, firstOk={}, secondOk={}",
+                    report.getReportId(), firstOk, secondOk);
             }
         } catch (Exception e) {
             log.error("Error sending analysis report notification: {}", e.getMessage(), e);

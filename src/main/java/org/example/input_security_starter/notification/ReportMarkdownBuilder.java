@@ -5,6 +5,7 @@ import org.example.input_security_starter.llm.analysis.AnalysisReport;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -30,8 +31,8 @@ public final class ReportMarkdownBuilder {
             report == null ? null : report.getRiskLevel(),
             report == null ? 0 : report.getRiskScore()
         );
-        String status = report == null ? "分析异常" : formatStatus(report.getStatus());
-        return getRiskMark(riskLevel) + " 安全分析报告 - " + status;
+        String status = report == null ? "分析异常" : readableStatus(report.getStatus());
+        return renderRiskMark(riskLevel) + " 安全分析报告 - " + status;
     }
 
     public static String buildStructuredMarkdown(AnalysisReport report) {
@@ -241,6 +242,522 @@ public final class ReportMarkdownBuilder {
             .append("% | LLM生成内容已通过事实校验(规则校验+聚合回填) | 报告分级: TLP:AMBER_");
 
         return out.toString();
+    }
+
+    /**
+     * 第一条：战术摘要 Markdown
+     */
+    public static String buildTacticalSummary(AnalysisReport report) {
+        if (report == null) {
+            return "# \u26A0\uFE0F [风险] 安全分析报告 - 分析异常\n\n报告为空，无法生成内容。";
+        }
+
+        List<String> ips = collectIps(report);
+        List<String> attackTypes = collectAttackTypes(report);
+        List<String> targetUrls = collectTargetUrls(report);
+        List<AnalysisReport.SourceDetail> topSources = report.getTopSources() == null
+            ? new ArrayList<AnalysisReport.SourceDetail>()
+            : report.getTopSources();
+
+        String mainIp = chooseMainIp(report, ips, topSources);
+        AnalysisReport.SourceDetail mainSource = findSourceDetail(topSources, mainIp);
+        String blockIp = chooseBlockIp(report, mainIp);
+        String topUrl = targetUrls.isEmpty() ? "/unknown" : targetUrls.get(0);
+
+        String riskLevel = normalizedRiskLevel(report.getRiskLevel(), report.getRiskScore());
+        String riskMark = renderRiskMark(riskLevel);
+        int confidencePct = normalizeConfidencePercent(report.getConfidence());
+
+        String mainAttackType = mainSource == null
+            ? (attackTypes.isEmpty() ? "unknown" : attackTypes.get(0))
+            : safe(mainSource.getPrimaryAttackType(), "unknown");
+        int mainEvents = mainSource == null ? 0 : mainSource.getTotalEvents();
+        String mainSuccessRate = mainSource == null ? "-" : formatSuccessRate(mainSource.getSuccessRate());
+        String intent = readableIntent(report.getAttackerIntent());
+
+        List<String> phases = detectKillChainPhases(attackTypes);
+        String phaseInline = phases.isEmpty() ? "侦察" : String.join(" → ", phases);
+
+        StringBuilder out = new StringBuilder(3072);
+        out.append("# ").append(riskMark).append(" 安全分析报告 - ").append(readableStatus(report.getStatus())).append("\n\n");
+        out.append("## 0. 执行摘要\n");
+        out.append("1. 触发原因：检测到多阶段攻击链（").append(phaseInline).append("），满足 LLM 分析阈值。\n");
+        out.append("2. 当前结论：").append(riskMark).append(" (").append(report.getRiskScore()).append("/100)，置信度 ")
+            .append(confidencePct).append("%。\n");
+        out.append("3. 主攻击源：").append(mainIp).append("（").append(mainAttackType).append("，")
+            .append(mainEvents).append("次事件，成功率 ").append(mainSuccessRate).append("）意图：")
+            .append(intent).append("。\n");
+        out.append("4. 立即处置：封禁 ").append(blockIp).append("；修复 ").append(topUrl).append(" 输入校验漏洞。\n\n");
+
+        out.append("## 1. 告警概览\n");
+        out.append("- 时间窗：").append(safe(report.getWindowStart(), "unknown")).append(" ~ ")
+            .append(safe(report.getWindowEnd(), "unknown")).append("\n");
+        out.append("- 处理/原始：").append(report.getAlertCount()).append("/")
+            .append(report.getOriginalAlertCount() > 0 ? report.getOriginalAlertCount() : report.getAlertCount())
+            .append(" 条 | IP情报：").append(report.getIpIntelligenceCount()).append(" 个\n");
+        if (report.getOverallSuccessRate() != null) {
+            out.append("- 2xx占比：").append(String.format(Locale.ROOT, "%.2f%%", report.getOverallSuccessRate()));
+            if (report.getOverallSuccessRate() >= 50d) {
+                out.append(" \u26A0\uFE0F 超半数请求未被拦截");
+            }
+            out.append("\n");
+        }
+        out.append("- 数据完整性：").append(readableDataCompleteness(report.getStatus())).append("\n\n");
+
+        out.append("## 1.5 攻击链路径\n");
+        out.append("检测到 ").append(phases.size()).append(" 个 Kill Chain 阶段：").append(phaseInline).append("\n");
+        int phaseTop = Math.min(3, topSources.size());
+        for (int i = 0; i < phaseTop; i++) {
+            AnalysisReport.SourceDetail source = topSources.get(i);
+            String phase = phaseOfAttackType(source.getPrimaryAttackType());
+            out.append("- ").append(safe(source.getIp(), "unknown")).append("：")
+                .append(phase).append("（").append(safe(source.getPrimaryAttackType(), "unknown")).append("），成功率 ")
+                .append(formatSuccessRate(source.getSuccessRate())).append("\n");
+        }
+        out.append("\n");
+
+        out.append("## 3. 攻击源 Top3\n");
+        out.append("| IP | 风险分 | 主要手法 | 事件数 | 成功率 |\n");
+        out.append("| --- | --- | --- | --- | --- |\n");
+        int topLimit = Math.min(3, topSources.size());
+        for (int i = 0; i < topLimit; i++) {
+            AnalysisReport.SourceDetail source = topSources.get(i);
+            out.append("| ").append(safe(source.getIp(), "unknown"))
+                .append(" | ").append(source.getRiskScore())
+                .append(" | ").append(safe(source.getPrimaryAttackType(), "unknown"))
+                .append(" | ").append(source.getTotalEvents())
+                .append(" | ").append(formatSuccessRate(source.getSuccessRate()))
+                .append(" |\n");
+        }
+        out.append("\n");
+
+        out.append("## 8. 处置建议\n");
+        appendRestoredRecommendations(out, report, mainIp, targetUrls);
+        return renumberSectionHeaders(out.toString());
+    }
+
+    /**
+     * 第二条：情报详情 JSONC 代码块
+     */
+    public static String buildIntelligenceJsonBlock(AnalysisReport report) {
+        if (report == null) {
+            return "```json\n{\n  // empty report\n}\n```";
+        }
+
+        List<String> ips = collectIps(report);
+        List<String> attackTypes = collectAttackTypes(report);
+        List<String> targetUrls = collectTargetUrls(report);
+        List<AnalysisReport.SourceDetail> topSources = report.getTopSources() == null
+            ? new ArrayList<AnalysisReport.SourceDetail>()
+            : report.getTopSources();
+        String mainIp = chooseMainIp(report, ips, topSources);
+        String pivotIp = findPivotIp(report.getPeerAttackers(), mainIp);
+
+        Map<String, List<String>> mitre = buildMitreGroups(attackTypes);
+        List<String> payloads = report.getPayloadSamples() == null
+            ? new ArrayList<String>()
+            : report.getPayloadSamples();
+        String successRate = report.getOverallSuccessRate() == null
+            ? "-"
+            : String.format(Locale.ROOT, "%.2f%%", report.getOverallSuccessRate());
+
+        Map<String, Integer> scoreMap = new LinkedHashMap<String, Integer>();
+        for (AnalysisReport.SourceDetail source : topSources) {
+            if (source != null && isValidIpv4(source.getIp())) {
+                scoreMap.put(source.getIp(), source.getRiskScore());
+            }
+        }
+        List<String> high = new ArrayList<String>();
+        List<String> medium = new ArrayList<String>();
+        List<String> observe = new ArrayList<String>();
+        for (String ip : ips) {
+            Integer score = scoreMap.get(ip);
+            if (score == null) {
+                observe.add(ip);
+            } else if (score >= 75) {
+                high.add(ip);
+            } else if (score >= 50) {
+                medium.add(ip);
+            } else {
+                observe.add(ip);
+            }
+        }
+
+        List<String> strong = new ArrayList<String>();
+        List<String> pending = new ArrayList<String>();
+        if (report.getPeerAttackers() != null) {
+            for (AnalysisReport.PeerAttacker peer : report.getPeerAttackers()) {
+                if (peer == null || !isValidIpv4(peer.getIp())) {
+                    continue;
+                }
+                if (peer.getConfidence() >= 0.6d) {
+                    if (!strong.contains(peer.getIp())) {
+                        strong.add(peer.getIp());
+                    }
+                } else {
+                    if (!pending.contains(peer.getIp())) {
+                        pending.add(peer.getIp());
+                    }
+                }
+            }
+        }
+
+        StringBuilder out = new StringBuilder(4096);
+        out.append("```json\n");
+        out.append("{\n");
+        out.append("  // ── §4 攻击手法 ──────────────────────────────\n");
+        out.append("  \"mitre\": {\n");
+        int mitreIndex = 0;
+        for (Map.Entry<String, List<String>> entry : mitre.entrySet()) {
+            mitreIndex++;
+            out.append("    ").append(jsonString(entry.getKey())).append(": ");
+            appendJsonArray(out, entry.getValue());
+            out.append(mitreIndex < mitre.size() ? ",\n" : "\n");
+        }
+        out.append("  },\n");
+        out.append("  \"payloads\": [\n");
+        int payloadLimit = Math.min(8, payloads.size());
+        for (int i = 0; i < payloadLimit; i++) {
+            String payload = payloads.get(i);
+            out.append("    ").append(jsonString(payload));
+            String comment = guessPayloadComment(payload);
+            if (notBlank(comment)) {
+                out.append(", // ").append(comment);
+            } else if (i < payloadLimit - 1) {
+                out.append(",");
+            }
+            out.append("\n");
+        }
+        out.append("  ],\n");
+        out.append("  \"success_rate\": ").append(jsonString(successRate))
+            .append(", // ").append(successRate.startsWith("-") ? "无可用状态码统计" : "2xx响应占比")
+            .append("\n\n");
+
+        out.append("  // ── §5 影响评估 ──────────────────────────────\n");
+        out.append("  \"impact\": {\n");
+        out.append("    \"data_exfil\": ").append(hasExfiltrationSignal(report) ? "true" : "false").append(",\n");
+        out.append("    \"affected_assets\": ");
+        appendJsonArray(out, limitList(targetUrls, 5));
+        out.append("\n  },\n\n");
+
+        out.append("  // ── §6 攻击者画像 ─────────────────────────────\n");
+        out.append("  \"attacker\": {\n");
+        out.append("    \"skill\": ").append(jsonString(safe(report.getAttackerSkillLevel(), "未知"))).append(",\n");
+        out.append("    \"automation\": ").append(jsonString(safe(report.getAutomationType(), "未知"))).append(",\n");
+        out.append("    \"intent\": ").append(jsonString(readableIntent(report.getAttackerIntent()))).append(",\n");
+        out.append("    \"pattern\": ").append(jsonString(safe(report.getAttackerPattern(), "多类型攻击手段组合"))).append("\n");
+        out.append("  },\n\n");
+
+        out.append("  // ── §7 关联分析 ──────────────────────────────\n");
+        out.append("  \"correlation\": {\n");
+        out.append("    \"pivot\": ").append(jsonString(pivotIp)).append(",\n");
+        out.append("    \"strong\": ");
+        appendJsonArray(out, strong);
+        out.append(",\n");
+        out.append("    \"pending\": ");
+        appendJsonArray(out, pending);
+        out.append(",\n");
+        out.append("    \"note\": ").append(jsonString("建议提取上述IP的UA特征与Payload进行指纹比对")).append("\n");
+        out.append("  },\n\n");
+
+        out.append("  // ── §9 IOC ───────────────────────────────────\n");
+        out.append("  \"ioc\": {\n");
+        out.append("    \"high\": ");
+        appendJsonArray(out, high);
+        out.append(",\n");
+        out.append("    \"medium\": ");
+        appendJsonArray(out, medium);
+        out.append(",\n");
+        out.append("    \"observe\": ");
+        appendJsonArray(out, observe);
+        out.append(",\n");
+        out.append("    \"types\": ");
+        appendJsonArray(out, attackTypes);
+        out.append(",\n");
+        out.append("    \"window\": ").append(jsonString(shortWindow(report.getWindowStart(), report.getWindowEnd()))).append("\n");
+        out.append("  },\n\n");
+
+        out.append("  // ── §10 声明 ─────────────────────────────────\n");
+        out.append("  // 置信度: ").append(normalizeConfidencePercent(report.getConfidence()))
+            .append("% | 聚合推断，需结合原始日志复核 | TLP:AMBER\n");
+        out.append("  \"meta\": {\n");
+        out.append("    \"report_id\": ").append(jsonString(safe(report.getReportId(), "unknown"))).append(",\n");
+        out.append("    \"confidence\": ").append(String.format(Locale.ROOT, "%.4f", normalizeConfidenceValue(report.getConfidence()))).append(",\n");
+        out.append("    \"coverage\": ").append(jsonString(estimateCoverage(report, ips, attackTypes, targetUrls) + "%")).append(",\n");
+        out.append("    \"tlp\": ").append(jsonString("AMBER")).append("\n");
+        out.append("  }\n");
+        out.append("}\n");
+        out.append("```");
+        return out.toString();
+    }
+
+    private static String renderRiskMark(String riskLevel) {
+        if ("high".equalsIgnoreCase(riskLevel)) {
+            return "\uD83D\uDD34";
+        }
+        if ("medium".equalsIgnoreCase(riskLevel)) {
+            return "\uD83D\uDFE1";
+        }
+        if ("low".equalsIgnoreCase(riskLevel)) {
+            return "\uD83D\uDFE2";
+        }
+        return "\u26A0\uFE0F";
+    }
+
+    private static String readableStatus(String status) {
+        if ("success".equalsIgnoreCase(status) || "guarded".equalsIgnoreCase(status)) {
+            return "分析完成";
+        }
+        if ("degraded".equalsIgnoreCase(status)) {
+            return "降级分析";
+        }
+        return "分析异常";
+    }
+
+    private static String readableDataCompleteness(String status) {
+        if ("success".equalsIgnoreCase(status) || "guarded".equalsIgnoreCase(status)) {
+            return "良好";
+        }
+        if ("degraded".equalsIgnoreCase(status)) {
+            return "部分缺失";
+        }
+        return "不足";
+    }
+
+    private static String readableIntent(String intent) {
+        if (!notBlank(intent)) {
+            return "未知";
+        }
+        String lower = intent.toLowerCase(Locale.ROOT);
+        if (lower.contains("recon")) {
+            return "侦察探测";
+        }
+        if (lower.contains("exploit")) {
+            return "漏洞利用";
+        }
+        if (lower.contains("exfil")) {
+            return "数据窃取";
+        }
+        if (lower.contains("lateral")) {
+            return "横向移动";
+        }
+        return intent;
+    }
+
+    private static List<String> detectKillChainPhases(List<String> attackTypes) {
+        List<String> phases = new ArrayList<String>();
+        List<String> order = Arrays.asList("侦察", "投递", "利用", "安装", "命令控制", "行动");
+        for (String phase : order) {
+            for (String attackType : attackTypes) {
+                if (phase.equals(phaseOfAttackType(attackType)) && !phases.contains(phase)) {
+                    phases.add(phase);
+                }
+            }
+        }
+        return phases;
+    }
+
+    private static String phaseOfAttackType(String attackType) {
+        if (!notBlank(attackType)) {
+            return "侦察";
+        }
+        String t = attackType.toLowerCase(Locale.ROOT);
+        if (t.contains("command-injection") || t.contains("code-execution") || t.contains("deserialization")) {
+            return "利用";
+        }
+        if (t.contains("installation")) {
+            return "安装";
+        }
+        if (t.contains("c2")) {
+            return "命令控制";
+        }
+        if (t.contains("action")) {
+            return "行动";
+        }
+        if (t.contains("xss") || t.contains("sql") || t.contains("xxe") || t.contains("nosql") || t.contains("template")) {
+            return "投递";
+        }
+        return "侦察";
+    }
+
+    private static AnalysisReport.SourceDetail findSourceDetail(List<AnalysisReport.SourceDetail> topSources, String ip) {
+        if (topSources == null || topSources.isEmpty()) {
+            return null;
+        }
+        for (AnalysisReport.SourceDetail source : topSources) {
+            if (source != null && safe(source.getIp(), "").equals(ip)) {
+                return source;
+            }
+        }
+        return topSources.get(0);
+    }
+
+    private static String chooseBlockIp(AnalysisReport report, String mainIp) {
+        if (report.getPeerAttackers() == null) {
+            return mainIp;
+        }
+        for (AnalysisReport.PeerAttacker peer : report.getPeerAttackers()) {
+            if (peer == null) {
+                continue;
+            }
+            String relationship = safe(peer.getRelationship(), "").toLowerCase(Locale.ROOT);
+            if ("same_asn".equals(relationship) && peer.getConfidence() >= 0.6d && notBlank(peer.getRelatedToIp())) {
+                return peer.getRelatedToIp().trim();
+            }
+        }
+        return mainIp;
+    }
+
+    private static String formatSuccessRate(Double successRate) {
+        if (successRate == null) {
+            return "-";
+        }
+        String value = String.format(Locale.ROOT, "%.2f%%", successRate);
+        if (successRate >= 70d) {
+            return value + " \uD83D\uDD34";
+        }
+        if (successRate >= 50d) {
+            return value + " \u26A0\uFE0F";
+        }
+        return value;
+    }
+
+    private static void appendRestoredRecommendations(
+        StringBuilder out,
+        AnalysisReport report,
+        String mainIp,
+        List<String> targetUrls
+    ) {
+        String url1 = targetUrls.size() > 0 ? targetUrls.get(0) : "/unknown";
+        String url2 = targetUrls.size() > 1 ? targetUrls.get(1) : url1;
+
+        out.append("1. \uD83D\uDEE1\uFE0F **[BLOCK]** 封禁 ").append(mainIp).append(" 及同网段 — WAF下发策略，观察24h\n");
+        out.append("2. \uD83D\uDD27 **[PATCH]** 修复 ").append(url1).append(" 路径规范化与输入校验漏洞\n");
+        out.append("3. \uD83D\uDCE1 **[MONITOR]** ").append(url1).append("、").append(url2).append(" 提升监控，联动4xx/5xx峰值\n");
+        out.append("4. \uD83D\uDD0D **[REVIEW]** 复核 ").append(url1).append(" 权限模型与最近发布变更\n");
+        out.append("5. \uD83D\uDEA8 **[IR]** 固化 ").append(mainIp).append(" 取证证据，启动事件分级排查\n");
+    }
+
+    private static Map<String, List<String>> buildMitreGroups(List<String> attackTypes) {
+        Map<String, List<String>> grouped = new LinkedHashMap<String, List<String>>();
+        grouped.put("T1190 漏洞利用", new ArrayList<String>());
+        grouped.put("T1059 命令执行", new ArrayList<String>());
+        grouped.put("T1505 持久化", new ArrayList<String>());
+
+        for (String attackType : attackTypes) {
+            if (!notBlank(attackType)) {
+                continue;
+            }
+            String t = attackType.toLowerCase(Locale.ROOT);
+            if (t.contains("command-injection") || t.contains("code-execution")) {
+                grouped.get("T1059 命令执行").add(attackType);
+            } else if (t.contains("installation")) {
+                grouped.get("T1505 持久化").add(attackType);
+            } else {
+                grouped.get("T1190 漏洞利用").add(attackType);
+            }
+        }
+        return grouped;
+    }
+
+    private static String findPivotIp(List<AnalysisReport.PeerAttacker> peers, String mainIp) {
+        if (peers == null || peers.isEmpty()) {
+            return mainIp;
+        }
+        Map<String, Integer> counter = new LinkedHashMap<String, Integer>();
+        for (AnalysisReport.PeerAttacker peer : peers) {
+            if (peer == null) {
+                continue;
+            }
+            String relatedTo = notBlank(peer.getRelatedToIp()) ? peer.getRelatedToIp().trim() : mainIp;
+            if (!isValidIpv4(relatedTo)) {
+                relatedTo = mainIp;
+            }
+            Integer value = counter.get(relatedTo);
+            counter.put(relatedTo, value == null ? 1 : value + 1);
+        }
+        String result = mainIp;
+        int best = -1;
+        for (Map.Entry<String, Integer> entry : counter.entrySet()) {
+            if (entry.getValue() > best) {
+                result = entry.getKey();
+                best = entry.getValue();
+            }
+        }
+        return result;
+    }
+
+    private static List<String> limitList(List<String> values, int max) {
+        if (values == null || values.isEmpty()) {
+            return new ArrayList<String>();
+        }
+        return new ArrayList<String>(values.subList(0, Math.min(values.size(), max)));
+    }
+
+    private static void appendJsonArray(StringBuilder out, List<String> values) {
+        out.append("[");
+        if (values != null && !values.isEmpty()) {
+            for (int i = 0; i < values.size(); i++) {
+                if (i > 0) {
+                    out.append(", ");
+                }
+                out.append(jsonString(values.get(i)));
+            }
+        }
+        out.append("]");
+    }
+
+    private static String jsonString(String text) {
+        String value = text == null ? "" : text;
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    }
+
+    private static String shortWindow(String start, String end) {
+        if (!notBlank(start) || !notBlank(end)) {
+            return safe(start, "unknown") + " ~ " + safe(end, "unknown");
+        }
+        String left = start.length() >= 16 ? start.substring(0, 16) : start;
+        String right = end.length() >= 16 ? end.substring(11, 16) : end;
+        return left + " ~ " + right;
+    }
+
+    private static String guessPayloadComment(String payload) {
+        if (!notBlank(payload)) {
+            return "";
+        }
+        String p = payload.toLowerCase(Locale.ROOT);
+        if (p.contains("etc/passwd") || p.contains("../")) {
+            return "路径遍历";
+        }
+        if (p.contains("ldap://") || p.contains("${lower:")) {
+            return "JNDI/Log4Shell";
+        }
+        if (p.contains("or 1=1") || p.contains("union select")) {
+            return "SQL注入";
+        }
+        if (p.contains(";") || p.contains("cat /etc")) {
+            return "命令注入";
+        }
+        if (p.contains("javascript:") || p.contains("<script")) {
+            return "XSS";
+        }
+        if (p.contains("${") && p.contains("}")) {
+            return "模板注入探针";
+        }
+        if (p.contains("<!entity") || p.contains("<!doctype")) {
+            return "XXE";
+        }
+        return "";
+    }
+
+    private static double normalizeConfidenceValue(double confidence) {
+        if (Double.isNaN(confidence) || Double.isInfinite(confidence)) {
+            return 0d;
+        }
+        if (confidence > 1d) {
+            return Math.max(0d, Math.min(1d, confidence / 100d));
+        }
+        return Math.max(0d, Math.min(1d, confidence));
     }
 
     private static String chooseMainIp(
@@ -696,6 +1213,23 @@ public final class ReportMarkdownBuilder {
         return relationship;
     }
 
+    private static String riskEmoji(String riskLevel) {
+        if (!notBlank(riskLevel)) {
+            return "⚠️";
+        }
+        String lower = riskLevel.toLowerCase(Locale.ROOT);
+        if ("high".equals(lower)) {
+            return "🔴";
+        }
+        if ("medium".equals(lower)) {
+            return "🟡";
+        }
+        if ("low".equals(lower)) {
+            return "🟢";
+        }
+        return "⚠️";
+    }
+
     private static String getRiskMark(String riskLevel) {
         if (!notBlank(riskLevel)) {
             return "[风险]";
@@ -789,6 +1323,29 @@ public final class ReportMarkdownBuilder {
             }
         }
         return true;
+    }
+
+    private static String renumberSectionHeaders(String markdown) {
+        if (!notBlank(markdown)) {
+            return markdown;
+        }
+        String[] lines = markdown.split("\\r?\\n", -1);
+        int sectionNo = 1;
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            if (!line.startsWith("## ")) {
+                continue;
+            }
+            if (line.startsWith("## 0.")) {
+                continue;
+            }
+            int dotPos = line.indexOf(". ");
+            if (dotPos > 3) {
+                lines[i] = "## " + sectionNo + line.substring(dotPos);
+                sectionNo++;
+            }
+        }
+        return String.join("\n", lines);
     }
 
     private static String safe(String value, String defaultValue) {

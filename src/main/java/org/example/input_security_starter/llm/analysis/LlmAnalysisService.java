@@ -387,6 +387,7 @@ public class LlmAnalysisService {
             normalizeReportToChinese(report);
             enrichReportWithAggregationContext(report, aggregationResult);
             applyRecommendationQualityGuard(report, aggregationResult);
+            applyPrePublishConsistencyGuard(report, aggregationResult);
             appendDegradedReasonToSummary(report);
             report.setIpIntelligenceCount(aggregationResult.getTotalIps());
             report.setAlertCount(aggregationResult.getProcessedAlerts());
@@ -462,11 +463,11 @@ public class LlmAnalysisService {
         }
         String summary = report.getSummary();
         if (!isNotBlank(summary)) {
-            report.setSummary("降级原因：" + readableReason);
+            report.setSummary("Degraded reason: " + readableReason);
             return;
         }
-        if (!summary.contains(readableReason) && !summary.contains("降级原因")) {
-            report.setSummary(summary + " 降级原因：" + readableReason + "。");
+        if (!summary.contains(readableReason) && !summary.contains("Degraded reason")) {
+            report.setSummary(summary + " Degraded reason: " + readableReason + ".");
         }
     }
 
@@ -1561,16 +1562,15 @@ public class LlmAnalysisService {
         }
 
         String[] genericPhrases = new String[]{
-            "关闭不必要的端口",
-            "更新所有软件",
-            "更新系统漏洞",
-            "监控敏感数据访问",
-            "审查用户权限",
-            "立即响应",
-            "监控所有异常",
+            "close unnecessary ports",
+            "update all software",
+            "patch everything",
+            "monitor sensitive data access",
+            "review user permissions",
+            "respond immediately",
+            "monitor all anomalies",
             "monitor all",
-            "update all",
-            "close unnecessary ports"
+            "update all"
         };
         for (String phrase : genericPhrases) {
             if (text.contains(phrase.toLowerCase())) {
@@ -2293,46 +2293,52 @@ public class LlmAnalysisService {
 
     private String mapFallbackReason(String reason) {
         if (reason == null) {
-            return "\u672a\u77e5\u539f\u56e0";
+            return "unknown reason";
         }
         if ("llm_invocation_timeout".equals(reason) || "analysis_timeout_before_llm_invocation".equals(reason)) {
-            return "LLM\u8c03\u7528\u8d85\u65f6";
+            return "LLM invocation timeout";
         }
         if ("rate_limited".equals(reason)) {
-            return "LLM\u8c03\u7528\u89e6\u53d1\u9650\u6d41";
+            return "LLM rate limited";
         }
         if ("circuit_open".equals(reason)) {
-            return "LLM\u7194\u65ad\u5668\u5f00\u542f\uff0c\u6682\u65f6\u4e0d\u53ef\u7528";
+            return "LLM circuit open";
         }
         if ("response_parse_empty_content".equals(reason) || "response_parse_failed".equals(reason)) {
-            return "LLM\u8fd4\u56de\u5b58\u5728\uff0c\u4f46\u89e3\u6790\u5931\u8d25\u6216\u5185\u5bb9\u4e3a\u7a7a";
+            return "LLM response parse failed or empty";
         }
         if ("network_exception".equals(reason)) {
-            return "LLM\u7f51\u7edc\u8c03\u7528\u5931\u8d25";
+            return "LLM network call failed";
         }
         if ("llm_execution_exception".equals(reason) || "llm_invocation_interrupted".equals(reason)) {
-            return "LLM\u8c03\u7528\u6267\u884c\u5f02\u5e38";
+            return "LLM invocation execution exception";
         }
         if ("llm_empty_response".equals(reason) || "provider_empty_response".equals(reason)) {
-            return "LLM\u8fd4\u56de\u7a7a\u5185\u5bb9";
+            return "LLM returned empty content";
         }
         if (reason.startsWith("http_status_")) {
-            return "LLM\u4e0a\u6e38\u8fd4\u56de\u975e200\u72b6\u6001: " + reason.substring("http_status_".length());
+            return "LLM upstream non-200 status: " + reason.substring("http_status_".length());
         }
         if ("LLM output validation failed".equals(reason)) {
-            return "LLM\u8f93\u51fa\u672a\u901a\u8fc7\u7ed3\u6784\u6821\u9a8c";
+            return "LLM output validation failed";
         }
         if ("LLM returned empty response".equals(reason)) {
-            return "LLM\u8fd4\u56de\u7a7a\u5185\u5bb9";
+            return "LLM returned empty content";
         }
         if ("Analysis timeout before LLM invocation".equals(reason)) {
-            return "\u5206\u6790\u5728\u8c03\u7528LLM\u524d\u8d85\u65f6";
+            return "analysis timeout before LLM invocation";
         }
         if ("Analysis timeout after input budgeting".equals(reason)) {
-            return "\u5206\u6790\u5728\u8f93\u5165\u9884\u7b97\u5904\u7406\u540e\u8d85\u65f6";
+            return "analysis timeout after input budgeting";
         }
-        if (reason != null && reason.contains("risk_consistency_guard_triggered")) {
-            return "LLM风险分显著低于聚合基线，已触发一致性回退";
+        if (reason.contains("consistency_guard_blocked_publish")) {
+            return "consistency guard found severe conflicts; auto publish blocked";
+        }
+        if (reason.contains("consistency_guard_triggered")) {
+            return "consistency guard corrected conflicting fields";
+        }
+        if (reason.contains("risk_consistency_guard_triggered")) {
+            return "LLM risk score was below aggregation baseline; fallback applied";
         }
         return reason;
     }
@@ -2470,16 +2476,466 @@ public class LlmAnalysisService {
             report.setErrorMessage(report.getErrorMessage() + "|" + guardReason);
         }
 
-        String guardMessage = "研判异常：LLM风险分显著低于聚合基线，已回退到聚合风险分。";
+        String guardMessage = "Risk consistency guard triggered: fallback to aggregation risk baseline.";
         if (!isNotBlank(report.getSummary())) {
             report.setSummary(guardMessage);
-        } else if (!report.getSummary().contains("LLM风险分显著低于聚合基线")) {
+        } else if (!report.getSummary().contains("Risk consistency guard triggered")) {
             report.setSummary(report.getSummary() + " " + guardMessage);
         }
     }
 
+    private void applyPrePublishConsistencyGuard(
+        AnalysisReport report,
+        AlertAggregator.AggregationResult aggregationResult
+    ) {
+        if (report == null) {
+            return;
+        }
+
+        List<String> fixes = new ArrayList<String>();
+        boolean severe = false;
+
+        String canonicalRiskLevel = riskLevelByScore(report.getRiskScore());
+        if (isNotBlank(canonicalRiskLevel)
+            && !canonicalRiskLevel.equalsIgnoreCase(safeLower(report.getRiskLevel()))) {
+            report.setRiskLevel(canonicalRiskLevel);
+            fixes.add("risk_level_normalized");
+        }
+
+        normalizeTopSources(report, fixes);
+        syncRiskBucketsWithAggregation(report, aggregationResult, fixes);
+        syncOverallSuccessRate(report, fixes);
+        augmentAttackTypesFromPayloadSamples(report, fixes);
+        if (!sanitizePeerRelations(report, fixes)) {
+            severe = true;
+        }
+
+        if (fixes.isEmpty()) {
+            return;
+        }
+
+        if ("success".equalsIgnoreCase(report.getStatus())) {
+            report.setStatus("guarded");
+        }
+        if (severe) {
+            report.setStatus("degraded");
+        }
+
+        String reason = severe ? "consistency_guard_blocked_publish" : "consistency_guard_triggered";
+        appendErrorReason(report, reason);
+        appendConsistencyNoteToSummary(report, fixes.size(), severe);
+    }
+
+    private void normalizeTopSources(AnalysisReport report, List<String> fixes) {
+        List<AnalysisReport.SourceDetail> topSources = report.getTopSources();
+        if (topSources == null || topSources.isEmpty()) {
+            return;
+        }
+
+        for (AnalysisReport.SourceDetail source : topSources) {
+            if (source == null) {
+                continue;
+            }
+            String expectedLevel = riskLevelByScore(source.getRiskScore());
+            if (isNotBlank(expectedLevel) && !expectedLevel.equalsIgnoreCase(safeLower(source.getThreatLevel()))) {
+                source.setThreatLevel(expectedLevel);
+                fixes.add("source_threat_level_normalized");
+            }
+            if (source.getSuccessRate() != null) {
+                double clamped = Math.max(0.0d, Math.min(100.0d, source.getSuccessRate()));
+                if (Math.abs(clamped - source.getSuccessRate()) > 0.0001d) {
+                    source.setSuccessRate(clamped);
+                    fixes.add("source_success_rate_clamped");
+                }
+            }
+        }
+
+        Collections.sort(topSources, new Comparator<AnalysisReport.SourceDetail>() {
+            @Override
+            public int compare(AnalysisReport.SourceDetail a, AnalysisReport.SourceDetail b) {
+                if (a == null && b == null) {
+                    return 0;
+                }
+                if (a == null) {
+                    return 1;
+                }
+                if (b == null) {
+                    return -1;
+                }
+                int riskCmp = Integer.compare(b.getRiskScore(), a.getRiskScore());
+                if (riskCmp != 0) {
+                    return riskCmp;
+                }
+                double aSuccess = a.getSuccessRate() == null ? -1.0d : a.getSuccessRate();
+                double bSuccess = b.getSuccessRate() == null ? -1.0d : b.getSuccessRate();
+                int successCmp = Double.compare(bSuccess, aSuccess);
+                if (successCmp != 0) {
+                    return successCmp;
+                }
+                return Integer.compare(b.getTotalEvents(), a.getTotalEvents());
+            }
+        });
+
+        String expectedMainIp = null;
+        for (AnalysisReport.SourceDetail source : topSources) {
+            if (source != null && isNotBlank(source.getIp())) {
+                expectedMainIp = source.getIp().trim();
+                break;
+            }
+        }
+
+        if (isNotBlank(expectedMainIp) && !expectedMainIp.equals(report.getMainAttackerIp())) {
+            report.setMainAttackerIp(expectedMainIp);
+            fixes.add("main_attacker_ip_normalized");
+        }
+    }
+
+    private void syncRiskBucketsWithAggregation(
+        AnalysisReport report,
+        AlertAggregator.AggregationResult aggregationResult,
+        List<String> fixes
+    ) {
+        if (report == null || aggregationResult == null || aggregationResult.getAggregatedAlerts() == null) {
+            return;
+        }
+
+        int high = 0;
+        int medium = 0;
+        int low = 0;
+        int total = 0;
+        for (AggregatedAlert alert : aggregationResult.getAggregatedAlerts()) {
+            if (alert == null) {
+                continue;
+            }
+            total++;
+            int risk = alert.getRiskScore();
+            if (risk >= HIGH_RISK_THRESHOLD) {
+                high++;
+            } else if (risk >= MEDIUM_RISK_THRESHOLD) {
+                medium++;
+            } else {
+                low++;
+            }
+        }
+
+        if (report.getHighRiskIps() != high || report.getMediumRiskIps() != medium || report.getLowRiskIps() != low) {
+            report.setHighRiskIps(high);
+            report.setMediumRiskIps(medium);
+            report.setLowRiskIps(low);
+            fixes.add("risk_bucket_counts_normalized");
+        }
+        if (report.getTotalIps() != total) {
+            report.setTotalIps(total);
+            fixes.add("total_ips_normalized");
+        }
+    }
+
+    private void syncOverallSuccessRate(AnalysisReport report, List<String> fixes) {
+        if (report == null || report.getStatusCodeDistribution() == null || report.getStatusCodeDistribution().isEmpty()) {
+            return;
+        }
+
+        int success = 0;
+        int total = 0;
+        for (Map.Entry<Integer, Integer> entry : report.getStatusCodeDistribution().entrySet()) {
+            Integer code = entry.getKey();
+            Integer count = entry.getValue();
+            if (code == null || count == null || count <= 0 || !isStandardHttpStatusCode(code)) {
+                continue;
+            }
+            total += count;
+            if (code >= 200 && code < 300) {
+                success += count;
+            }
+        }
+
+        if (total <= 0) {
+            return;
+        }
+        double normalizedRate = Math.round((success * 10000.0d) / total) / 100.0d;
+        if (report.getOverallSuccessRate() == null || Math.abs(report.getOverallSuccessRate() - normalizedRate) > 0.01d) {
+            report.setOverallSuccessRate(normalizedRate);
+            fixes.add("success_rate_normalized");
+        }
+    }
+
+    private void augmentAttackTypesFromPayloadSamples(AnalysisReport report, List<String> fixes) {
+        if (report == null || report.getPayloadSamples() == null || report.getPayloadSamples().isEmpty()) {
+            return;
+        }
+
+        LinkedHashSet<String> inferredTypes = new LinkedHashSet<String>();
+        for (String payload : report.getPayloadSamples()) {
+            if (!isNotBlank(payload)) {
+                continue;
+            }
+            String lower = payload.toLowerCase();
+            if (lower.contains("<script") || lower.contains("javascript:") || lower.contains("onerror=")) {
+                inferredTypes.add("xss-attack");
+            }
+            if (lower.contains("' or 1=1") || lower.contains("union select") || lower.contains("sleep(")) {
+                inferredTypes.add("sql-injection");
+            }
+            if (lower.contains("../") || lower.contains("..%2f") || lower.contains("..\\\\")) {
+                inferredTypes.add("path-traversal");
+            }
+            if (lower.contains("ldap://")) {
+                inferredTypes.add("ldap-injection");
+            }
+            if (lower.contains("<?xml") || lower.contains("<!entity")) {
+                inferredTypes.add("xxe-injection");
+            }
+            if (lower.contains("; cat ") || lower.contains("$(") || lower.contains("`")) {
+                inferredTypes.add("command-injection");
+            }
+        }
+
+        if (inferredTypes.isEmpty()) {
+            return;
+        }
+
+        List<String> topAttackTypes = report.getTopAttackTypes() == null
+            ? new ArrayList<String>() : new ArrayList<String>(report.getTopAttackTypes());
+        for (String inferredType : inferredTypes) {
+            if (!containsIgnoreCase(topAttackTypes, inferredType)) {
+                topAttackTypes.add(inferredType);
+                fixes.add("attack_type_inferred_from_payload");
+            }
+        }
+        report.setTopAttackTypes(topAttackTypes);
+
+        List<AnalysisReport.AttackType> attackTypes = report.getAttackTypes() == null
+            ? new ArrayList<AnalysisReport.AttackType>() : new ArrayList<AnalysisReport.AttackType>(report.getAttackTypes());
+        for (String inferredType : inferredTypes) {
+            if (!hasAttackTypeView(attackTypes, inferredType)) {
+                attackTypes.add(new AnalysisReport.AttackType(
+                    inferredType,
+                    "inferred from payload evidence",
+                    1,
+                    riskLevelByScore(report.getRiskScore())
+                ));
+            }
+        }
+        report.setAttackTypes(attackTypes);
+    }
+
+    private boolean sanitizePeerRelations(AnalysisReport report, List<String> fixes) {
+        if (report == null || report.getPeerAttackers() == null || report.getPeerAttackers().isEmpty()) {
+            return true;
+        }
+
+        String mainIp = report.getMainAttackerIp();
+        Map<String, Integer> asnByIp = new HashMap<String, Integer>();
+        Map<String, String> primaryTypeByIp = new HashMap<String, String>();
+        if (report.getTopSources() != null) {
+            for (AnalysisReport.SourceDetail source : report.getTopSources()) {
+                if (source == null || !isNotBlank(source.getIp())) {
+                    continue;
+                }
+                String ip = source.getIp().trim();
+                if (source.getAsn() != null) {
+                    asnByIp.put(ip, source.getAsn());
+                }
+                if (isNotBlank(source.getPrimaryAttackType())) {
+                    primaryTypeByIp.put(ip, source.getPrimaryAttackType().trim().toLowerCase());
+                }
+            }
+        }
+        if (!isNotBlank(mainIp) && report.getTopSources() != null && !report.getTopSources().isEmpty()) {
+            for (AnalysisReport.SourceDetail source : report.getTopSources()) {
+                if (source != null && isNotBlank(source.getIp())) {
+                    mainIp = source.getIp().trim();
+                    report.setMainAttackerIp(mainIp);
+                    break;
+                }
+            }
+        }
+
+        List<AnalysisReport.PeerAttacker> sanitized = new ArrayList<AnalysisReport.PeerAttacker>();
+        Set<String> dedupe = new LinkedHashSet<String>();
+
+        for (AnalysisReport.PeerAttacker peer : report.getPeerAttackers()) {
+            if (peer == null || !isNotBlank(peer.getIp())) {
+                continue;
+            }
+            String ip = peer.getIp().trim();
+            if (isNotBlank(mainIp) && mainIp.equals(ip)) {
+                fixes.add("self_peer_removed");
+                continue;
+            }
+
+            String relationshipRaw = isNotBlank(peer.getRelationship())
+                ? peer.getRelationship().trim().toLowerCase() : "unknown";
+            String relationship = normalizePeerRelationship(relationshipRaw);
+            if (!relationship.equals(relationshipRaw)) {
+                fixes.add("peer_relation_normalized");
+            }
+            String relatedTo = isNotBlank(peer.getRelatedToIp()) ? peer.getRelatedToIp().trim() : mainIp;
+            if (isNotBlank(relatedTo) && relatedTo.equals(ip)) {
+                fixes.add("self_anchor_peer_removed");
+                continue;
+            }
+            peer.setRelatedToIp(relatedTo);
+
+            boolean relationValid = true;
+            if ("same_asn".equals(relationship)) {
+                Integer peerAsn = asnByIp.get(ip);
+                Integer baseAsn = isNotBlank(relatedTo) ? asnByIp.get(relatedTo) : null;
+                relationValid = peerAsn != null && baseAsn != null && peerAsn.equals(baseAsn);
+            } else if ("same_attack_type".equals(relationship)) {
+                String peerType = primaryTypeByIp.get(ip);
+                String baseType = isNotBlank(relatedTo) ? primaryTypeByIp.get(relatedTo) : null;
+                relationValid = isNotBlank(peerType) && isNotBlank(baseType) && peerType.equalsIgnoreCase(baseType);
+            }
+
+            if (!relationValid && relationshipRaw.contains("same_asn") && relationshipRaw.contains("same_attack_type")) {
+                String peerType = primaryTypeByIp.get(ip);
+                String baseType = isNotBlank(relatedTo) ? primaryTypeByIp.get(relatedTo) : null;
+                if (isNotBlank(peerType) && isNotBlank(baseType) && peerType.equalsIgnoreCase(baseType)) {
+                    relationship = "same_attack_type";
+                    relationValid = true;
+                    fixes.add("peer_relation_fallback_same_attack_type");
+                }
+            }
+
+            if (!relationValid) {
+                peer.setRelationship("unverified_relation");
+                peer.setConfidence(Math.min(0.45d, clamp01(peer.getConfidence())));
+                if (isNotBlank(mainIp)) {
+                    peer.setRelatedToIp(mainIp);
+                }
+                fixes.add("peer_relation_downgraded");
+            } else {
+                peer.setRelationship(relationship);
+                peer.setConfidence(clamp01(peer.getConfidence()));
+            }
+
+            String dedupeKey = ip + "|" + peer.getRelationship() + "|" + safeLower(relatedTo);
+            if (!dedupe.add(dedupeKey)) {
+                fixes.add("duplicate_peer_removed");
+                continue;
+            }
+            sanitized.add(peer);
+        }
+
+        report.setPeerAttackers(sanitized);
+        return true;
+    }
+
+    private String normalizePeerRelationship(String relationship) {
+        if (!isNotBlank(relationship)) {
+            return "unknown";
+        }
+        String lower = relationship.trim().toLowerCase();
+        if (lower.contains("same_asn") && lower.contains("same_attack_type")) {
+            return "same_attack_type";
+        }
+        if (lower.contains("same_attack_type")) {
+            return "same_attack_type";
+        }
+        if (lower.contains("same_asn")) {
+            return "same_asn";
+        }
+        if (lower.contains("same_payload")) {
+            return "same_payload";
+        }
+        if (lower.contains("same_window")) {
+            return "same_window";
+        }
+        return "unknown";
+    }
+
+    private void appendErrorReason(AnalysisReport report, String reason) {
+        if (report == null || !isNotBlank(reason)) {
+            return;
+        }
+        if (!isNotBlank(report.getErrorMessage())) {
+            report.setErrorMessage(reason);
+            return;
+        }
+        if (!report.getErrorMessage().contains(reason)) {
+            report.setErrorMessage(report.getErrorMessage() + "|" + reason);
+        }
+    }
+
+    private void appendConsistencyNoteToSummary(AnalysisReport report, int fixCount, boolean severe) {
+        if (report == null || fixCount <= 0) {
+            return;
+        }
+        String note = severe
+            ? "一致性护栏已修正" + fixCount + "项冲突，报告已降级，请人工复核。"
+            : "一致性护栏已修正" + fixCount + "项字段冲突。";
+        if (!isNotBlank(report.getSummary())) {
+            report.setSummary(note);
+            return;
+        }
+        if (!report.getSummary().contains("一致性护栏")) {
+            report.setSummary(report.getSummary() + " " + note);
+        }
+    }
+
+    private String riskLevelByScore(int riskScore) {
+        if (riskScore >= HIGH_RISK_THRESHOLD) {
+            return "high";
+        }
+        if (riskScore >= MEDIUM_RISK_THRESHOLD) {
+            return "medium";
+        }
+        if (riskScore > 0) {
+            return "low";
+        }
+        return "unknown";
+    }
+
+    private String safeLower(String value) {
+        return value == null ? "" : value.trim().toLowerCase();
+    }
+
+    private boolean containsIgnoreCase(List<String> values, String target) {
+        if (values == null || target == null) {
+            return false;
+        }
+        for (String value : values) {
+            if (value != null && value.trim().equalsIgnoreCase(target.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasAttackTypeView(List<AnalysisReport.AttackType> attackTypes, String name) {
+        if (attackTypes == null || name == null) {
+            return false;
+        }
+        for (AnalysisReport.AttackType attackType : attackTypes) {
+            if (attackType != null && isNotBlank(attackType.getName())
+                && attackType.getName().trim().equalsIgnoreCase(name.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private double clamp01(double value) {
+        if (Double.isNaN(value) || Double.isInfinite(value)) {
+            return 0.0d;
+        }
+        if (value < 0.0d) {
+            return 0.0d;
+        }
+        if (value > 1.0d) {
+            return 1.0d;
+        }
+        return value;
+    }
+
     private void sendEnabledNotifications(AnalysisReport report) {
         if (report == null) {
+            return;
+        }
+        if (isNotBlank(report.getErrorMessage())
+            && report.getErrorMessage().contains("consistency_guard_blocked_publish")) {
+            log.warn("Notification blocked by consistency guard for reportId={}", report.getReportId());
             return;
         }
         if (feishuNotifier != null && feishuNotifier.isEnabled()) {
@@ -2556,6 +3012,25 @@ public class LlmAnalysisService {
         private List<String> topAttackTypes = Collections.emptyList();
         private List<String> topTargetUrls = Collections.emptyList();
         private List<String> publicIps = Collections.emptyList();
+
+        private RecommendationEvidence() {
+        }
+
+        // Compatibility constructor to tolerate stale mixed bytecode in IDE/runtime classpaths.
+        private RecommendationEvidence(RecommendationEvidence other) {
+            if (other == null) {
+                return;
+            }
+            this.topAttackTypes = other.topAttackTypes == null
+                ? Collections.<String>emptyList()
+                : new ArrayList<String>(other.topAttackTypes);
+            this.topTargetUrls = other.topTargetUrls == null
+                ? Collections.<String>emptyList()
+                : new ArrayList<String>(other.topTargetUrls);
+            this.publicIps = other.publicIps == null
+                ? Collections.<String>emptyList()
+                : new ArrayList<String>(other.publicIps);
+        }
     }
 
     public static class IncrementalAnalysisResult {
@@ -2630,4 +3105,3 @@ public class LlmAnalysisService {
         }
     }
 }
-

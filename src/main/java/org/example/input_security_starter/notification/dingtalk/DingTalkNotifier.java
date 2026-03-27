@@ -26,13 +26,19 @@ public class DingTalkNotifier {
         }
 
         try {
-            String title = ReportMarkdownBuilder.buildTitle(report);
-            String content = ReportMarkdownBuilder.buildStructuredMarkdown(report);
-            boolean success = dingTalkClient.sendMarkdownMessage(title, content);
-            if (success) {
-                log.info("Analysis report notification sent to DingTalk: {}", report.getReportId());
+            String title1 = ReportMarkdownBuilder.buildTitle(report);
+            String content1 = ReportMarkdownBuilder.buildTacticalSummary(report);
+            boolean firstOk = dingTalkClient.sendMarkdownMessage(title1, content1);
+
+            String title2 = "\uD83D\uDCCB \u60C5\u62A5\u8BE6\u60C5 \u00B7 " + report.getReportId();
+            String content2 = ReportMarkdownBuilder.buildIntelligenceJsonBlock(report);
+            boolean secondOk = dingTalkClient.sendMarkdownMessage(title2, content2);
+
+            if (firstOk && secondOk) {
+                log.info("Analysis report notifications sent to DingTalk (2 messages): {}", report.getReportId());
             } else {
-                log.warn("Failed to send analysis report notification to DingTalk: {}", report.getReportId());
+                log.warn("Failed to send one or more DingTalk notifications: {}, firstOk={}, secondOk={}",
+                    report.getReportId(), firstOk, secondOk);
             }
         } catch (Exception e) {
             log.error("Error sending analysis report notification to DingTalk: {}", e.getMessage(), e);
