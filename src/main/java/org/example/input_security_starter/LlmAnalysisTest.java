@@ -7,6 +7,7 @@ import org.example.input_security_starter.llm.analysis.LlmAnalysisService;
 import org.example.input_security_starter.llm.ip.AbuseIpDbClient;
 import org.example.input_security_starter.llm.ip.IpQueryService;
 import org.example.input_security_starter.llm.provider.LlmProvider;
+import org.example.input_security_starter.llm.provider.LlmProviderConfig;
 import org.example.input_security_starter.llm.provider.aliyun.AliyunBailianConfig;
 import org.example.input_security_starter.llm.provider.aliyun.AliyunBailianProvider;
 import org.example.input_security_starter.llm.provider.glm.GlmConfig;
@@ -25,6 +26,7 @@ import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 /**
@@ -457,6 +459,43 @@ public class LlmAnalysisTest {
         System.out.println("\n--- 完整分析报告 ---");
         System.out.println(report.getAttackNarrative());
 
+        System.out.println("\n[Compare Mode] Generating forced degraded report...");
+        LlmAnalysisService degradedService = new LlmAnalysisService(
+            new ForcedDegradedProvider("manual_compare_forced_degraded"),
+            abuseIpDbClient,
+            ipQueryService,
+            alertLogPath,
+            50,
+            24000,
+            null,
+            null,
+            null
+        );
+        long degradedStartTime = System.currentTimeMillis();
+        AnalysisReport degradedReport = degradedService.analyzeAttackChainAlerts(false);
+        long degradedEndTime = System.currentTimeMillis();
+        if (degradedReport == null) {
+            System.err.println("  [WARN] failed to generate degraded report");
+        } else {
+            System.out.println("  [OK] degraded report generated, cost: " + (degradedEndTime - degradedStartTime) + " ms");
+            printReportToConsole("Degraded Report (Forced Fallback)", "forced-degraded", degradedReport);
+        }
+
+        if (degradedReport != null) {
+            double normalUnifiedConfidence = normalizeConfidenceForManualCompare(report, aggregationResult);
+            double degradedUnifiedConfidence = normalizeConfidenceForManualCompare(degradedReport, aggregationResult);
+            System.out.println("\n--- Quick Compare ---");
+            System.out.println("status: normal=" + report.getStatus() + " | degraded=" + degradedReport.getStatus());
+            System.out.println("riskScore: normal=" + report.getRiskScore() + " | degraded=" + degradedReport.getRiskScore());
+            System.out.println("riskLevel: normal=" + report.getRiskLevel() + " | degraded=" + degradedReport.getRiskLevel());
+            System.out.println("confidence(original): normal=" + formatPercent(report.getConfidence())
+                + " | degraded=" + formatPercent(degradedReport.getConfidence()));
+            System.out.println("confidence(unified): normal=" + formatPercent(normalUnifiedConfidence)
+                + " | degraded=" + formatPercent(degradedUnifiedConfidence));
+            System.out.println("errorMessage: normal=" + defaultText(report.getErrorMessage(), "<none>")
+                + " | degraded=" + defaultText(degradedReport.getErrorMessage(), "<none>"));
+        }
+
         System.out.println("\n【步骤13】检查IP索引状态...");
         System.out.println("  索引条目数: " + ipQueryService.getIndexSize());
         
@@ -472,6 +511,177 @@ public class LlmAnalysisTest {
         System.out.println("\n╔════════════════════════════════════════════════════════════════╗");
         System.out.println("║                      测试完成                                   ║");
         System.out.println("╚════════════════════════════════════════════════════════════════╝");
+    }
+
+    private static class ForcedDegradedProvider implements LlmProvider {
+        private final String failureReason;
+        private final LlmProviderConfig config = new ForcedDegradedConfig();
+
+        ForcedDegradedProvider(String failureReason) {
+            this.failureReason = failureReason;
+        }
+
+        @Override
+        public String getName() {
+            return "forced-degraded";
+        }
+
+        @Override
+        public String analyze(String prompt) {
+            return null;
+        }
+
+        @Override
+        public String analyzeAggregatedAlerts(String aggregatedJson) {
+            return null;
+        }
+
+        @Override
+        public String analyzeAttackChain(List<String> alertLogs, Map<String, Object> ipIntelligence) {
+            return null;
+        }
+
+        @Override
+        public boolean testConnection() {
+            return true;
+        }
+
+        @Override
+        public boolean isAvailable() {
+            return true;
+        }
+
+        @Override
+        public LlmProviderConfig getConfig() {
+            return config;
+        }
+
+        @Override
+        public String getLastFailureReason() {
+            return failureReason;
+        }
+    }
+
+    private static class ForcedDegradedConfig extends LlmProviderConfig {
+        ForcedDegradedConfig() {
+            this.apiUrl = "mock://forced-degraded";
+            this.apiKey = "mock";
+            this.model = "forced-degraded";
+        }
+    }
+
+    private static void printReportToConsole(String title, String providerName, AnalysisReport report) {
+        if (report == null) {
+            System.out.println("\n===== " + title + " =====");
+            System.out.println("报告为空，无法展示。");
+            return;
+        }
+
+        System.out.println("\n==============================================================");
+        System.out.println(title + " (Provider: " + providerName + ")");
+        System.out.println("==============================================================");
+        System.out.println("报告 ID: " + report.getReportId());
+        System.out.println("分析时间: " + (report.getAnalysisTime() == null ? "未知" : REPORT_TIME_FORMAT.format(report.getAnalysisTime())));
+        System.out.println("告警数量: " + report.getAlertCount());
+        System.out.println("IP 情报数: " + report.getIpIntelligenceCount());
+        System.out.println("状态: " + report.getStatus());
+        if (report.getErrorMessage() != null) {
+            System.out.println("错误信息: " + report.getErrorMessage());
+        }
+        System.out.println("\n--- 分析摘要 ---");
+        System.out.println(report.getSummary());
+        System.out.println("\n--- 攻击者画像 ---");
+        System.out.println("技能等级: " + defaultText(report.getAttackerSkillLevel(), "未知"));
+        System.out.println("自动化程度: " + defaultText(report.getAutomationType(), "未知"));
+        System.out.println("主要意图: " + defaultText(report.getAttackerIntent(), "未知"));
+        System.out.println("攻击模式: " + defaultText(report.getAttackerPattern(), "未知"));
+        if (report.getAttackerIntentConfidence() > 0) {
+            System.out.println("意图置信度: " + Math.round(report.getAttackerIntentConfidence() * 100) + "%");
+        }
+
+        List<AnalysisReport.PeerAttacker> peerAttackers = report.getPeerAttackers();
+        if (peerAttackers != null && !peerAttackers.isEmpty()) {
+            System.out.println("\n--- 关联攻击者 ---");
+            int peerLimit = Math.min(5, peerAttackers.size());
+            for (int i = 0; i < peerLimit; i++) {
+                AnalysisReport.PeerAttacker peer = peerAttackers.get(i);
+                String relation = peer.getRelationship() == null ? "unknown" : peer.getRelationship();
+                int confidence = (int) Math.round(Math.max(0, Math.min(1, peer.getConfidence())) * 100.0);
+                System.out.println(
+                    (i + 1) + ". " + defaultText(peer.getIp(), "unknown")
+                        + " | relationship=" + relation
+                        + " | confidence=" + confidence + "%"
+                );
+            }
+        }
+
+        List<String> recommendations = report.getRecommendations() == null ? new ArrayList<String>() : report.getRecommendations();
+        if (!recommendations.isEmpty()) {
+            System.out.println("\n--- 防御建议 ---");
+            for (int i = 0; i < recommendations.size(); i++) {
+                String recommendation = recommendations.get(i);
+                recommendation = recommendation == null ? "" : recommendation.trim().replaceAll("\\s+", " ");
+                System.out.println((i + 1) + ". " + recommendation);
+            }
+        }
+
+        List<String> keyIndicators = report.getKeyIndicators() == null ? new ArrayList<String>() : report.getKeyIndicators();
+        if (!keyIndicators.isEmpty()) {
+            System.out.println("\n--- 关键指标 ---");
+            System.out.println(String.join(", ", keyIndicators));
+        }
+
+        System.out.println("\n--- 完整分析报告 ---");
+        System.out.println(report.getAttackNarrative());
+    }
+
+    private static String formatPercent(double value) {
+        double clamped = Math.max(0.0, Math.min(1.0, value));
+        return String.valueOf(Math.round(clamped * 100.0)) + "%";
+    }
+
+    private static double normalizeConfidenceForManualCompare(
+        AnalysisReport report,
+        AlertAggregator.AggregationResult aggregationResult
+    ) {
+        if (report == null) {
+            return 0.0;
+        }
+
+        int maxRisk = Math.max(0, Math.min(100, report.getRiskScore()));
+        int highRisk = 0;
+        int mediumRisk = 0;
+        if (aggregationResult != null && aggregationResult.getAggregatedAlerts() != null) {
+            for (org.example.input_security_starter.llm.analysis.AggregatedAlert alert : aggregationResult.getAggregatedAlerts()) {
+                if (alert == null) {
+                    continue;
+                }
+                int risk = Math.max(0, Math.min(100, alert.getRiskScore()));
+                if (risk > maxRisk) {
+                    maxRisk = risk;
+                }
+                if (risk >= HIGH_RISK_THRESHOLD) {
+                    highRisk++;
+                } else if (risk >= MEDIUM_RISK_THRESHOLD) {
+                    mediumRisk++;
+                }
+            }
+        }
+
+        double riskFactor = maxRisk / 100.0;
+        double estimated;
+        if (report.isAttackDetected()) {
+            estimated = 0.62 + (0.28 * riskFactor);
+            if (highRisk > 0) {
+                estimated += 0.05;
+            } else if (mediumRisk > 0) {
+                estimated += 0.02;
+            }
+            return Math.max(0.55, Math.min(0.95, estimated));
+        }
+
+        estimated = 0.45 + (0.20 * riskFactor);
+        return Math.max(0.35, Math.min(0.80, estimated));
     }
 
     private static List<String> readAlertLogs(File logFile) {
